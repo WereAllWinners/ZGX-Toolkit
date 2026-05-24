@@ -27,6 +27,8 @@ import { TemplateListViewController } from './templates/templateListViewControll
 import { PairDevicesViewController } from './groups/pairDevices/pairDevicesViewController';
 import { PairDetailsViewController } from './groups/pairDetails/pairDetailsViewController';
 import { UnpairDevicesViewController } from './groups/unpairDevices/unpairDevicesViewController';
+import { DeviceInfoViewController } from './devices/info/deviceInfoViewController';
+import { AdminDashboardViewController } from './admin/adminDashboardViewController';
 
 /**
  * Type for view constructor functions
@@ -85,6 +87,10 @@ export class ViewFactory {
         this.register(PairDevicesViewController.viewId(), PairDevicesViewController);
         this.register(PairDetailsViewController.viewId(), PairDetailsViewController);
         this.register(UnpairDevicesViewController.viewId(), UnpairDevicesViewController);
+
+        // Manageability views
+        this.register(DeviceInfoViewController.viewId(), DeviceInfoViewController);
+        this.register(AdminDashboardViewController.viewId(), AdminDashboardViewController);
         
         this.logger.debug('View registry initialized', { 
             viewCount: this.registry.size 

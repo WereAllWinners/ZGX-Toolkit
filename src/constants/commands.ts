@@ -27,6 +27,16 @@ export const COMMANDS = {
     UNPAIR_DEVICES: 'zgxToolkit.unpairDevices',
     /** Show details of paired devices and their ConnectX NICs */
     PAIR_DETAILS: 'zgxToolkit.pairDetails',
+    /** Collect full inventory snapshot from a DGX Spark device */
+    RUN_INVENTORY: 'zgxToolkit.runInventory',
+    /** Show health posture for a DGX Spark device */
+    SHOW_HEALTH: 'zgxToolkit.showHealth',
+    /** Run diagnostics (L1 or L2 bundle) on a DGX Spark device */
+    RUN_DIAGNOSTICS: 'zgxToolkit.runDiagnostics',
+    /** Check for available software/firmware updates on a DGX Spark device */
+    CHECK_UPDATES: 'zgxToolkit.checkUpdates',
+    /** Open the Device Info panel for a DGX Spark device */
+    SHOW_DEVICE_INFO: 'zgxToolkit.showDeviceInfo',
 } as const;
 
 /**

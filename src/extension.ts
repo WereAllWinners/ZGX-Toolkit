@@ -11,8 +11,8 @@ import { logger } from './utils/logger';
 import { telemetryService } from './services/telemetryService';
 import { TelemetryEventType } from './types/telemetry';
 import { configService } from './services/configService';
-import { deviceStore, groupStore } from './store';
-import { deviceService, AppInstallationService, PasswordService, deviceDiscoveryService, extensionStateService, dnsServiceRegistration, connectxGroupService, deviceHealthCheckService } from './services';
+import { deviceStore, groupStore, userGroupStore } from './store';
+import { deviceService, AppInstallationService, PasswordService, deviceDiscoveryService, extensionStateService, dnsServiceRegistration, connectxGroupService, deviceHealthCheckService, manageabilityService, userGroupService } from './services';
 import { ConnectionService } from './services/connectionService';
 import { registerCommands, setCommandContext } from './commands';
 import { createGlobalStatePersistenceService } from './services/globalStatePersistenceService';
@@ -72,7 +72,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const messageRouter = new MessageRouter(logger);
 
         // Initialize global state persistence service (subscribes to store changes and persists them)
-        const storageService = await createGlobalStatePersistenceService(context, deviceStore, groupStore);
+        const storageService = await createGlobalStatePersistenceService(context, deviceStore, groupStore, userGroupStore);
         context.subscriptions.push({
             dispose: () => storageService.dispose()
         });
@@ -89,13 +89,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             deviceService,
             deviceStore,
             groupStore,
+            userGroupStore,
             connectxGroupService,
             deviceHealthCheckService,
             configService,
             deviceDiscoveryService,
             connectionService,
             appInstallationService,
-            passwordService
+            passwordService,
+            manageabilityService,
+            userGroupService,
         });
 
         // Create and register unified provider

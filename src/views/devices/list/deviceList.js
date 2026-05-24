@@ -15,6 +15,12 @@
             addDeviceBtn.addEventListener('click', showAddForm);
         }
 
+        // Admin Dashboard button
+        const adminDashboardBtn = document.getElementById('admin-dashboard-btn');
+        if (adminDashboardBtn) {
+            adminDashboardBtn.addEventListener('click', openAdminDashboard);
+        }
+
         // Open editor button
         const openEditorBtn = document.getElementById('open-editor-btn');
         if (openEditorBtn) {
@@ -161,6 +167,14 @@
             type: 'navigate',
             targetView: 'devices/manager',
             params: { showAddForm: true },
+            panel: 'editor'
+        });
+    }
+
+    function openAdminDashboard() {
+        vscode.postMessage({
+            type: 'navigate',
+            targetView: 'admin/dashboard',
             panel: 'editor'
         });
     }

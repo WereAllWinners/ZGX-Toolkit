@@ -17,11 +17,12 @@ import { COMMANDS } from '../constants/commands';
 import { LOG_LEVEL_OPTIONS, parseLogLevel } from '../constants/logLevels';
 import { TelemetryEventType } from '../types/telemetry';
 import { ZgxToolkitProvider } from '../providers';
+import { registerManageabilityCommands } from './manageabilityCommands';
 
 /**
  * Register all extension commands.
  * This should be called during extension activation.
- * 
+ *
  * @param context Extension context for registering disposables
  * @param zgxProvider The ZGX Toolkit provider for view navigation
  */
@@ -44,6 +45,8 @@ export function registerCommands(context: vscode.ExtensionContext, zgxProvider: 
         vscode.commands.registerCommand(COMMANDS.UNPAIR_DEVICES, unpairDevicesCommand),
         vscode.commands.registerCommand(COMMANDS.PAIR_DETAILS, pairDetailsCommand)
     );
+
+    registerManageabilityCommands(context, zgxProvider);
 }
 
 /**

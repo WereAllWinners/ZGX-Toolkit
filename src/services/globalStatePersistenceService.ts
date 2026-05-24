@@ -6,8 +6,10 @@
 import * as vscode from 'vscode';
 import { Device } from '../types/devices';
 import { ConnectXGroup } from '../types/connectxGroup';
+import { UserGroup } from '../types/userGroup';
 import { DeviceStore } from '../store/deviceStore';
 import { GroupStore } from '../store/groupStore';
+import { UserGroupStore } from '../store/userGroupStore';
 import { logger } from '../utils/logger';
 
 /**
@@ -18,8 +20,10 @@ export interface StorageServiceConfig {
     context: vscode.ExtensionContext;
     /** device store to persist */
     deviceStore: DeviceStore;
-    /** group store to persist */
+    /** ConnectX group store to persist */
     groupStore: GroupStore;
+    /** User group store to persist */
+    userGroupStore: UserGroupStore;
 }
 
 /**
@@ -32,8 +36,10 @@ export class GlobalStatePersistenceService {
     private static readonly LEGACY_STORAGE_KEYS = ['remoteDevices.devices'];
     private static readonly DEVICES_STORAGE_KEY = 'HPInc.zgx-toolkit.devices';
     private static readonly GROUPS_STORAGE_KEY = 'HPInc.zgx-toolkit.groups';
+    private static readonly USER_GROUPS_STORAGE_KEY = 'HPInc.zgx-toolkit.userGroups';
     private deviceUnsubscribe?: () => void;
     private groupUnsubscribe?: () => void;
+    private userGroupUnsubscribe?: () => void;
 
     constructor(private config: StorageServiceConfig) { }
 
@@ -48,6 +54,7 @@ export class GlobalStatePersistenceService {
             // Load devices and groups from storage
             await this.loadDevices();
             await this.loadGroups();
+            await this.loadUserGroups();
 
             // Subscribe to store changes for auto-save
             this.deviceUnsubscribe = this.config.deviceStore.subscribe(async (devices) => {
@@ -56,6 +63,10 @@ export class GlobalStatePersistenceService {
 
             this.groupUnsubscribe = this.config.groupStore.subscribe(async (groups) => {
                 await this.saveGroups(groups);
+            });
+
+            this.userGroupUnsubscribe = this.config.userGroupStore.subscribe(async (groups) => {
+                await this.saveUserGroups(groups);
             });
 
             logger.info('Storage service initialized successfully');
@@ -210,6 +221,31 @@ export class GlobalStatePersistenceService {
     }
 
     /**
+     * Load user groups from VS Code's global state into the store.
+     */
+    public async loadUserGroups(): Promise<void> {
+        logger.debug('Loading user groups from storage');
+        try {
+            const saved = this.config.context.globalState.get<UserGroup[]>(
+                GlobalStatePersistenceService.USER_GROUPS_STORAGE_KEY,
+                []
+            );
+            if (saved.length === 0) {
+                logger.debug('No user groups found in storage');
+                return;
+            }
+            const valid = saved.filter(g => g && typeof g === 'object' && g.id && g.name && Array.isArray(g.deviceIds));
+            if (valid.length < saved.length) {
+                logger.warn('Some user groups failed validation', { total: saved.length, valid: valid.length });
+            }
+            this.config.userGroupStore.setMany(valid);
+            logger.info('User groups loaded from storage', { count: valid.length });
+        } catch (error) {
+            logger.error('Failed to load user groups from storage', { error });
+        }
+    }
+
+    /**
      * Save devices to VS Code's global state.
      * Called automatically when store changes.
      */
@@ -245,6 +281,18 @@ export class GlobalStatePersistenceService {
         }
     }
 
+    private async saveUserGroups(groups: UserGroup[]): Promise<void> {
+        try {
+            await this.config.context.globalState.update(
+                GlobalStatePersistenceService.USER_GROUPS_STORAGE_KEY,
+                groups
+            );
+            logger.trace('User groups saved to storage', { count: groups.length });
+        } catch (error) {
+            logger.error('Failed to save user groups to storage', { error });
+        }
+    }
+
     /**
      * Manually trigger a save of all devices and groups.
      * Useful for ensuring data is persisted at critical points.
@@ -253,8 +301,10 @@ export class GlobalStatePersistenceService {
         logger.debug('Forcing save of devices and groups to storage');
         const devices = this.config.deviceStore.getAll();
         const groups = this.config.groupStore.getAll();
+        const userGroups = this.config.userGroupStore.getAll();
         await this.saveDevices(devices);
         await this.saveGroups(groups);
+        await this.saveUserGroups(userGroups);
     }
 
     /**
@@ -276,6 +326,10 @@ export class GlobalStatePersistenceService {
             );
             await this.config.context.globalState.update(
                 GlobalStatePersistenceService.GROUPS_STORAGE_KEY,
+                undefined
+            );
+            await this.config.context.globalState.update(
+                GlobalStatePersistenceService.USER_GROUPS_STORAGE_KEY,
                 undefined
             );
 
@@ -419,6 +473,11 @@ export class GlobalStatePersistenceService {
             this.groupUnsubscribe();
             this.groupUnsubscribe = undefined;
         }
+
+        if (this.userGroupUnsubscribe) {
+            this.userGroupUnsubscribe();
+            this.userGroupUnsubscribe = undefined;
+        }
     }
 
     /**
@@ -449,9 +508,10 @@ export class GlobalStatePersistenceService {
 export async function createGlobalStatePersistenceService(
     context: vscode.ExtensionContext,
     deviceStore: DeviceStore,
-    groupStore: GroupStore
+    groupStore: GroupStore,
+    userGroupStore: UserGroupStore
 ): Promise<GlobalStatePersistenceService> {
-    const service = new GlobalStatePersistenceService({ context, deviceStore, groupStore });
+    const service = new GlobalStatePersistenceService({ context, deviceStore, groupStore, userGroupStore });
     await service.initialize();
     return service;
 }

@@ -1,0 +1,119 @@
+<!--
+  Copyright ©2025 HP Development Company, L.P.
+  Licensed under the X11 License. See LICENSE file in the project root for details.
+-->
+
+<div class="container">
+    <div class="header">
+        <div class="header-title-row">
+            <h1>{{deviceName}}</h1>
+            {{#if hasSnapshot}}
+            <button class="btn btn-secondary refresh-btn" id="refreshBtn">
+                <i class="codicon codicon-refresh"></i>
+                Refresh
+            </button>
+            {{/if}}
+        </div>
+        <p class="header-subtitle">{{deviceHost}}:{{devicePort}} &mdash; NVIDIA DGX Spark</p>
+        {{#if hasSnapshot}}
+        <p class="collected-at">Last collected: {{collectedAt}}</p>
+        {{/if}}
+    </div>
+
+    {{#unless hasSnapshot}}
+    <div class="empty-state">
+        <i class="codicon codicon-database"></i>
+        <p>No inventory data yet for this device.</p>
+        <button class="btn" id="runInventoryBtn">
+            <i class="codicon codicon-server"></i>
+            Run Inventory
+        </button>
+    </div>
+    {{/unless}}
+
+    {{#if hasSnapshot}}
+
+    {{#if identity}}
+    <section class="info-section">
+        <h2><i class="codicon codicon-chip"></i> Identity</h2>
+        <div class="info-grid">
+            <div class="info-row"><span class="info-label">Product</span><span class="info-value">{{identity.product_name}}</span></div>
+            <div class="info-row"><span class="info-label">Manufacturer</span><span class="info-value">{{identity.manufacturer}}</span></div>
+            <div class="info-row"><span class="info-label">Hostname</span><span class="info-value">{{identity.hostname}}</span></div>
+            <div class="info-row"><span class="info-label">Serial Number</span><span class="info-value mono">{{identity.serial_number}}</span></div>
+            <div class="info-row"><span class="info-label">UUID</span><span class="info-value mono">{{identity.uuid}}</span></div>
+        </div>
+    </section>
+    {{/if}}
+
+    {{#if osBuild}}
+    <section class="info-section">
+        <h2><i class="codicon codicon-terminal-linux"></i> OS Build</h2>
+        <div class="info-grid">
+            <div class="info-row"><span class="info-label">OS Version</span><span class="info-value">{{osBuild.os_version}}</span></div>
+            <div class="info-row"><span class="info-label">Kernel</span><span class="info-value mono">{{osBuild.kernel_version}}</span></div>
+            <div class="info-row"><span class="info-label">Build</span><span class="info-value mono">{{osBuild.build_string}}</span></div>
+            <div class="info-row"><span class="info-label">Build Date</span><span class="info-value">{{osBuild.build_date}}</span></div>
+        </div>
+    </section>
+    {{/if}}
+
+    {{#if hardware}}
+    <section class="info-section">
+        <h2><i class="codicon codicon-server-process"></i> Hardware</h2>
+        <div class="info-grid">
+            <div class="info-row"><span class="info-label">GPU</span><span class="info-value">{{hardware.gpu_name}}</span></div>
+            <div class="info-row"><span class="info-label">GPU VRAM</span><span class="info-value">{{hardware.gpu_vram_gb}} GB</span></div>
+            <div class="info-row"><span class="info-label">CPU</span><span class="info-value">{{hardware.cpu}}</span></div>
+            <div class="info-row"><span class="info-label">Memory</span><span class="info-value">{{hardware.total_memory_gb}} GB</span></div>
+        </div>
+    </section>
+    {{/if}}
+
+    {{#if firmware}}
+    <section class="info-section">
+        <h2><i class="codicon codicon-versions"></i> Firmware</h2>
+        <div class="info-grid">
+            <div class="info-row"><span class="info-label">UEFI</span><span class="info-value mono">{{firmware.uefi_version}}</span></div>
+            <div class="info-row"><span class="info-label">BMC</span><span class="info-value mono">{{firmware.bmc_version}}</span></div>
+            {{#each firmware.entries}}
+            <div class="info-row"><span class="info-label">{{component}}</span><span class="info-value mono">{{version}}</span></div>
+            {{/each}}
+        </div>
+    </section>
+    {{/if}}
+
+    {{#if drivers}}
+    <section class="info-section">
+        <h2><i class="codicon codicon-extensions"></i> Drivers</h2>
+        <div class="info-grid">
+            <div class="info-row"><span class="info-label">GPU Driver</span><span class="info-value mono">{{drivers.gpu_driver_version}}</span></div>
+            {{#each drivers.entries}}
+            <div class="info-row"><span class="info-label">{{name}}</span><span class="info-value mono">{{version}}</span></div>
+            {{/each}}
+        </div>
+    </section>
+    {{/if}}
+
+    {{#if health}}
+    <section class="info-section">
+        <h2><i class="codicon codicon-pulse"></i> Health</h2>
+        <div class="health-status status-{{health.overall_status}}">
+            <i class="codicon {{healthIcon}}"></i>
+            <span>{{health.overall_status}}</span>
+        </div>
+        {{#if health.signals}}
+        <div class="info-grid signals-grid">
+            {{#each health.signals}}
+            <div class="info-row signal-row signal-{{status}}">
+                <span class="info-label">{{name}}</span>
+                <span class="info-value">{{status}}{{#if message}} — {{message}}{{/if}}</span>
+            </div>
+            {{/each}}
+        </div>
+        {{/if}}
+    </section>
+    {{/if}}
+
+    {{/if}}
+</div>

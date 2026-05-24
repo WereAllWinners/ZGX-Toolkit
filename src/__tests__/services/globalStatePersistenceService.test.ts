@@ -11,6 +11,7 @@
 import { GlobalStatePersistenceService } from '../../services/globalStatePersistenceService';
 import { DeviceStore } from '../../store/deviceStore';
 import { GroupStore } from '../../store/groupStore';
+import { UserGroupStore } from '../../store/userGroupStore';
 import { Device } from '../../types/devices';
 import { ConnectXGroup } from '../../types/connectxGroup';
 import * as vscode from 'vscode';
@@ -31,6 +32,7 @@ describe('GlobalStatePersistenceService', () => {
     let mockContext: jest.Mocked<vscode.ExtensionContext>;
     let mockDeviceStore: DeviceStore;
     let mockGroupStore: GroupStore;
+    let mockUserGroupStore: UserGroupStore;
     let mockGlobalState: Map<string, any>;
     let mockDevices: Device[];
     let mockGroups: ConnectXGroup[];
@@ -123,12 +125,14 @@ describe('GlobalStatePersistenceService', () => {
         // Create real stores
         mockDeviceStore = new DeviceStore();
         mockGroupStore = new GroupStore();
+        mockUserGroupStore = new UserGroupStore();
 
         // Create service
         service = new GlobalStatePersistenceService({
             context: mockContext,
             deviceStore: mockDeviceStore,
-            groupStore: mockGroupStore
+            groupStore: mockGroupStore,
+            userGroupStore: mockUserGroupStore,
         });
     });
 

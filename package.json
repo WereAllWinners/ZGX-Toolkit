@@ -21,6 +21,7 @@
     "engines": {
         "vscode": "^1.74.0"
     },
+    "extensionKind": ["ui"],
     "categories": [
         "Other"
     ],
@@ -95,6 +96,26 @@
             {
                 "command": "zgxToolkit.pairDetails",
                 "title": "ZGX Toolkit: Show Pairing Details"
+            },
+            {
+                "command": "zgxToolkit.runInventory",
+                "title": "ZGX Toolkit: Run Device Inventory"
+            },
+            {
+                "command": "zgxToolkit.showHealth",
+                "title": "ZGX Toolkit: Show Device Health"
+            },
+            {
+                "command": "zgxToolkit.runDiagnostics",
+                "title": "ZGX Toolkit: Run Diagnostics"
+            },
+            {
+                "command": "zgxToolkit.checkUpdates",
+                "title": "ZGX Toolkit: Check for Updates"
+            },
+            {
+                "command": "zgxToolkit.showDeviceInfo",
+                "title": "ZGX Toolkit: Show Device Info"
             }
         ],
         "configuration": {

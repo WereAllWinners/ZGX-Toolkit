@@ -1,0 +1,219 @@
+<!--
+  Copyright ©2025 HP Development Company, L.P.
+  Licensed under the X11 License. See LICENSE file in the project root for details.
+-->
+
+<div class="container">
+    <div class="dashboard-header">
+        <div class="dashboard-title-row">
+            <div>
+                <h1><i class="codicon codicon-dashboard"></i> Admin Dashboard</h1>
+                <p class="dashboard-subtitle">
+                    {{totalDevices}} device{{#unless singleDevice}}s{{/unless}}{{#if healthyCount}} &middot; <span class="healthy-count">{{healthyCount}} healthy</span>{{/if}}{{#if degradedCount}} &middot; <span class="degraded-count">{{degradedCount}} degraded</span>{{/if}}
+                </p>
+            </div>
+            <button class="btn btn-secondary" id="refreshAllBtn">
+                <i class="codicon codicon-refresh"></i> Refresh All
+            </button>
+        </div>
+    </div>
+
+    {{#if hasDevices}}
+    <div class="device-grid">
+        {{#each devices}}
+        <div class="device-card{{#unless isSetup}} card-not-setup{{/unless}}" data-device-id="{{id}}">
+
+            <div class="card-header">
+                <span class="card-device-name">{{name}}</span>
+                <span class="health-badge badge-{{healthStatus}}">
+                    <i class="codicon {{healthIcon}}"></i>
+                    {{healthStatusLabel}}
+                </span>
+            </div>
+
+            <div class="card-body">
+                <div class="card-row">
+                    <span class="card-label">Host</span>
+                    <span class="card-value mono">{{host}}:{{port}}</span>
+                </div>
+                {{#if productName}}
+                <div class="card-row">
+                    <span class="card-label">Device</span>
+                    <span class="card-value">{{productName}}</span>
+                </div>
+                {{/if}}
+                {{#if gpuSummary}}
+                <div class="card-row">
+                    <span class="card-label">GPU</span>
+                    <span class="card-value">{{{gpuSummary}}}</span>
+                </div>
+                {{/if}}
+                {{#if totalMemoryGb}}
+                <div class="card-row">
+                    <span class="card-label">{{#if unifiedMemory}}Unified RAM{{else}}RAM{{/if}}</span>
+                    <span class="card-value">{{totalMemoryGb}} GB{{#if unifiedMemory}} <span class="unified-tag">unified</span>{{/if}}</span>
+                </div>
+                {{/if}}
+                <div class="card-row">
+                    <span class="card-label">Last collected</span>
+                    <span class="card-value{{#unless hasSnapshot}} muted{{/unless}}">{{#if hasSnapshot}}{{snapshotAge}}{{else}}Never{{/if}}</span>
+                </div>
+                {{#if updateCount}}
+                <div class="card-row">
+                    <span class="card-label">Updates</span>
+                    <span class="card-value update-pending">{{updateCount}} pending</span>
+                </div>
+                {{/if}}
+                {{#if groupNames}}
+                <div class="card-row">
+                    <span class="card-label">Groups</span>
+                    <span class="card-value">
+                        {{#each groupNames}}<span class="group-tag">{{this}}</span>{{/each}}
+                    </span>
+                </div>
+                {{/if}}
+            </div>
+
+            <div class="card-footer">
+                {{#if isSetup}}
+                {{#if hasCollector}}
+                <button class="btn btn-sm" data-action="run-inventory" data-device-id="{{id}}" title="Run full device inventory">
+                    <i class="codicon codicon-server"></i> Inventory
+                </button>
+                <button class="btn btn-sm btn-secondary" data-action="view-details" data-device-id="{{id}}" title="Open Device Info panel">
+                    <i class="codicon codicon-info"></i> Details
+                </button>
+                <button class="btn btn-sm btn-secondary" data-action="check-updates" data-device-id="{{id}}" title="Check for available updates">
+                    <i class="codicon codicon-cloud-download"></i> Updates
+                </button>
+                <button class="btn btn-sm btn-update" data-action="apply-updates" data-device-id="{{id}}" title="Check for and apply available updates">
+                    <i class="codicon codicon-arrow-up"></i> Apply Updates
+                </button>
+                {{else}}
+                <button class="btn btn-sm" data-action="setup-manageability" data-device-id="{{id}}" title="Install zgx-collector on this device to enable manageability features">
+                    <i class="codicon codicon-cloud-upload"></i> Setup Manageability
+                </button>
+                {{/if}}
+                {{else}}
+                <span class="not-setup-msg"><i class="codicon codicon-warning"></i> Device not set up yet</span>
+                {{/if}}
+            </div>
+
+        </div>
+        {{/each}}
+    </div>
+
+    {{else}}
+    <div class="empty-state">
+        <i class="codicon codicon-device-desktop"></i>
+        <p>No devices found.</p>
+        <p class="muted">Add and set up devices in the ZGX Device Manager first.</p>
+    </div>
+    {{/if}}
+
+    <!-- ── User Groups ─────────────────────────────────────────── -->
+    <div class="section-divider"></div>
+    <div class="groups-section-header">
+        <div>
+            <h2 class="groups-title"><i class="codicon codicon-organization"></i> User Groups</h2>
+            <p class="groups-subtitle">Organize devices into named groups for your team or project.</p>
+        </div>
+        <button class="btn" id="createGroupBtn">
+            <i class="codicon codicon-add"></i> Create Group
+        </button>
+    </div>
+
+    {{#if hasUserGroups}}
+    <div class="group-grid">
+        {{#each userGroups}}
+        <div class="group-card" data-group-id="{{id}}">
+            <div class="group-card-header">
+                <span class="group-card-name">{{name}}</span>
+                <div class="group-card-actions">
+                    <button class="btn btn-sm btn-secondary" data-action="edit-group" data-group-id="{{id}}" title="Edit group">
+                        <i class="codicon codicon-edit"></i>
+                    </button>
+                    <button class="btn btn-sm btn-danger" data-action="delete-group" data-group-id="{{id}}" title="Delete group">
+                        <i class="codicon codicon-trash"></i>
+                    </button>
+                </div>
+            </div>
+            {{#if description}}
+            <p class="group-card-description">{{description}}</p>
+            {{/if}}
+            <div class="group-card-body">
+                {{#if deviceCount}}
+                <p class="group-device-count"><i class="codicon codicon-server"></i> {{deviceCount}} device{{#unless singleDevice}}s{{/unless}}</p>
+                <ul class="group-device-list">
+                    {{#each deviceNames}}
+                    <li>{{this}}</li>
+                    {{/each}}
+                </ul>
+                {{else}}
+                <p class="group-empty">No devices in this group yet.</p>
+                {{/if}}
+            </div>
+            {{#if deviceCount}}
+            <div class="group-card-footer">
+                <button class="btn btn-sm" data-action="group-inventory" data-group-id="{{id}}" title="Run inventory on all devices in this group">
+                    <i class="codicon codicon-server"></i> Inventory All
+                </button>
+                <button class="btn btn-sm btn-secondary" data-action="group-health" data-group-id="{{id}}" title="Check health of all devices in this group">
+                    <i class="codicon codicon-pulse"></i> Health Check
+                </button>
+                <button class="btn btn-sm btn-secondary" data-action="group-updates" data-group-id="{{id}}" title="Check for updates on all devices in this group">
+                    <i class="codicon codicon-cloud-download"></i> Check Updates
+                </button>
+                <button class="btn btn-sm btn-update" data-action="group-apply-updates" data-group-id="{{id}}" title="Check for and apply updates on all devices in this group">
+                    <i class="codicon codicon-arrow-up"></i> Apply Updates
+                </button>
+            </div>
+            {{/if}}
+        </div>
+        {{/each}}
+    </div>
+    {{else}}
+    <div class="groups-empty-state">
+        <i class="codicon codicon-organization"></i>
+        <p>No groups created yet.</p>
+    </div>
+    {{/if}}
+</div>
+
+<!-- ── Create / Edit Group Form Overlay ───────────────────── -->
+<div id="groupFormOverlay" class="form-overlay" aria-modal="true" role="dialog" aria-label="Group form">
+    <div class="form-panel">
+        <div class="form-header">
+            <h3 id="groupFormTitle">Create Group</h3>
+            <button class="form-close-btn" id="groupFormCloseBtn" aria-label="Close"><i class="codicon codicon-close"></i></button>
+        </div>
+        <form id="groupForm" autocomplete="off">
+            <input type="hidden" id="groupFormId" value="">
+            <div class="form-field">
+                <label for="groupFormName">Name <span class="required">*</span></label>
+                <input type="text" id="groupFormName" class="form-input" placeholder="e.g. Research Lab" maxlength="80" required>
+            </div>
+            <div class="form-field">
+                <label for="groupFormDesc">Description</label>
+                <input type="text" id="groupFormDesc" class="form-input" placeholder="Optional description" maxlength="200">
+            </div>
+            <div class="form-field">
+                <label>Devices</label>
+                <div id="groupFormDevices" class="device-checklist">
+                    {{#each devices}}
+                    <label class="device-check-item">
+                        <input type="checkbox" class="device-checkbox" value="{{id}}" data-group-ids="{{groupIdsCsv}}"> {{name}}
+                    </label>
+                    {{/each}}
+                    {{#unless hasDevices}}
+                    <p class="muted">No devices available.</p>
+                    {{/unless}}
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" id="groupFormCancelBtn">Cancel</button>
+                <button type="submit" class="btn" id="groupFormSubmitBtn">Create Group</button>
+            </div>
+        </form>
+    </div>
+</div>

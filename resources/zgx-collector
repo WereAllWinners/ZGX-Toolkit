@@ -1,0 +1,560 @@
+#!/usr/bin/env python3
+"""
+zgx-collector v1.1 — cross-architecture Linux manageability collector for ZGX Toolkit.
+
+Supports:
+  - NVIDIA GPUs (nvidia-smi) — DGX Spark GB10, RTX, A/H-series
+  - AMD GPUs (rocm-smi / sysfs) — Strix Halo, Instinct, discrete Radeon
+  - x86_64 and aarch64; single and multi-GPU systems
+  - Unified memory detection for AMD APUs (Strix Halo / Ryzen AI Max)
+  - CPU-only hosts (no GPU tooling required)
+
+Output: JSON envelope  {"tool":..., "timestamp":..., "status":"ok", "data":{...}}
+"""
+import json, subprocess, sys, os, shutil, glob
+from datetime import datetime, timezone
+
+VERSION = "1.1.0"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+def envelope(tool, data, status="ok"):
+    return {"tool": tool, "timestamp": now_iso(), "status": status, "version": VERSION, "data": data}
+
+def run(cmd, timeout=10):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip(), r.returncode == 0
+    except Exception:
+        return "", False
+
+def read_file(path, default=""):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except Exception:
+        return default
+
+def safe_float(v, default=None):
+    try:
+        return float(str(v).strip().split()[0].rstrip("CcWw%°"))
+    except Exception:
+        return default
+
+# ---------------------------------------------------------------------------
+# GPU vendor detection
+# ---------------------------------------------------------------------------
+
+def detect_gpu_vendor():
+    """Returns 'nvidia', 'amd', or 'none'."""
+    if shutil.which("nvidia-smi"):
+        out, ok = run(["nvidia-smi", "-L"], timeout=5)
+        if ok and out:
+            return "nvidia"
+    if shutil.which("rocm-smi"):
+        _, ok = run(["rocm-smi", "--version"], timeout=5)
+        if ok:
+            return "amd"
+    # Sysfs fallback for AMD without ROCm
+    for vp in glob.glob("/sys/class/drm/card*/device/vendor"):
+        if read_file(vp) == "0x1002":
+            return "amd"
+    return "none"
+
+# ---------------------------------------------------------------------------
+# NVIDIA GPU collection
+# ---------------------------------------------------------------------------
+
+def get_nvidia_gpus():
+    fields = "index,name,temperature.gpu,power.draw,memory.total,memory.used"
+    out, ok = run(["nvidia-smi", f"--query-gpu={fields}", "--format=csv,noheader,nounits"])
+    if not ok or not out:
+        return []
+    gpus = []
+    for line in out.splitlines():
+        p = [x.strip() for x in line.split(",")]
+        if len(p) < 6:
+            continue
+        def f(v): return safe_float(v) if v not in ("[N/A]", "N/A", "") else None
+        gpus.append({
+            "index":           int(p[0]) if p[0].isdigit() else len(gpus),
+            "name":            p[1],
+            "vendor":          "nvidia",
+            "temp_c":          f(p[2]),
+            "power_w":         f(p[3]),
+            "memory_total_mb": f(p[4]),
+            "memory_used_mb":  f(p[5]),
+            "unified_memory":  False,
+        })
+    return gpus
+
+# ---------------------------------------------------------------------------
+# AMD GPU collection
+# ---------------------------------------------------------------------------
+
+def _system_ram_mb():
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) / 1024
+    except Exception:
+        pass
+    return 0
+
+def _is_unified(vram_mb):
+    """True when VRAM ≈ system RAM (APU / Strix Halo unified memory)."""
+    sys_mb = _system_ram_mb()
+    return sys_mb > 0 and abs(vram_mb - sys_mb) / sys_mb < 0.15
+
+def get_amd_gpus_rocm():
+    """Parse rocm-smi --showallinfo --json. Returns list or None on failure."""
+    out, ok = run(["rocm-smi", "--showallinfo", "--json"], timeout=15)
+    if not ok or not out:
+        return None
+    try:
+        data = json.loads(out)
+    except Exception:
+        return None
+
+    gpus = []
+    for key in sorted(data.keys()):
+        if not key.startswith("card"):
+            continue
+        val = data[key]
+
+        name = (val.get("Card Series") or val.get("Card model") or
+                val.get("Card SKU") or "AMD GPU")
+
+        # Temperature — prefer junction, then edge
+        temp = None
+        for tk in ["Temperature (Sensor junction) (C)",
+                   "Temperature (Sensor edge) (C)",
+                   "Temperature (Sensor memory) (C)"]:
+            if val.get(tk) not in (None, "N/A", ""):
+                temp = safe_float(val[tk]); break
+
+        # Power
+        power = None
+        for pk in ["Average Graphics Package Power (W)",
+                   "Current Socket Graphics Package Power (W)"]:
+            if val.get(pk) not in (None, "N/A", ""):
+                power = safe_float(val[pk]); break
+
+        # VRAM
+        vram_total_mb = None
+        vram_used_mb  = None
+        raw_total = val.get("VRAM Total Memory (B)")
+        raw_used  = val.get("VRAM Total Used Memory (B)")
+        try:
+            if raw_total: vram_total_mb = int(raw_total) / (1024 ** 2)
+        except Exception: pass
+        try:
+            if raw_used: vram_used_mb = int(raw_used) / (1024 ** 2)
+        except Exception: pass
+
+        unified = _is_unified(vram_total_mb) if vram_total_mb else False
+
+        gpus.append({
+            "index":           len(gpus),
+            "name":            name,
+            "vendor":          "amd",
+            "temp_c":          temp,
+            "power_w":         power,
+            "memory_total_mb": vram_total_mb,
+            "memory_used_mb":  vram_used_mb,
+            "unified_memory":  unified,
+        })
+    return gpus if gpus else None
+
+def get_amd_gpu_sysfs(card):
+    """Sysfs fallback for one AMD drm card entry (e.g. 'card0')."""
+    base = f"/sys/class/drm/{card}/device"
+
+    # Best-effort name from rocm-smi single-card query
+    name = "AMD GPU"
+    if shutil.which("rocm-smi"):
+        out, ok = run(["rocm-smi", "--showproductname", "--json"], timeout=5)
+        if ok and out:
+            try:
+                d = json.loads(out)
+                for v in d.values():
+                    if isinstance(v, dict):
+                        n = v.get("Card Series") or v.get("Card model") or ""
+                        if n: name = n; break
+            except Exception: pass
+
+    # Temperature from hwmon
+    temp = None
+    for hwmon in glob.glob(f"{base}/hwmon/hwmon*"):
+        for lp in glob.glob(f"{hwmon}/temp*_label"):
+            lbl = read_file(lp).lower()
+            if any(x in lbl for x in ("junction", "edge", "temp1")):
+                raw = read_file(lp.replace("_label", "_input"))
+                if raw:
+                    try: temp = int(raw) / 1000.0; break
+                    except: pass
+        if temp is not None: break
+
+    # Power from hwmon (µW → W)
+    power = None
+    for hwmon in glob.glob(f"{base}/hwmon/hwmon*"):
+        raw = read_file(f"{hwmon}/power1_average")
+        if raw:
+            try: power = int(raw) / 1_000_000.0; break
+            except: pass
+
+    # VRAM from sysfs
+    vram_total_mb = None
+    vram_used_mb  = None
+    raw_t = read_file(f"{base}/mem_info_vram_total")
+    raw_u = read_file(f"{base}/mem_info_vram_used")
+    if raw_t.isdigit(): vram_total_mb = int(raw_t) / (1024 ** 2)
+    if raw_u.isdigit(): vram_used_mb  = int(raw_u) / (1024 ** 2)
+
+    unified = _is_unified(vram_total_mb) if vram_total_mb else False
+
+    idx_str = card.replace("card", "")
+    return {
+        "index":           int(idx_str) if idx_str.isdigit() else 0,
+        "name":            name,
+        "vendor":          "amd",
+        "temp_c":          temp,
+        "power_w":         power,
+        "memory_total_mb": vram_total_mb,
+        "memory_used_mb":  vram_used_mb,
+        "unified_memory":  unified,
+    }
+
+def get_amd_gpus():
+    # Enumerate AMD DRM cards
+    cards = sorted([
+        e for e in os.listdir("/sys/class/drm")
+        if e.startswith("card") and "-" not in e and
+           read_file(f"/sys/class/drm/{e}/device/vendor") == "0x1002"
+    ]) if os.path.isdir("/sys/class/drm") else []
+
+    if not cards:
+        return []
+
+    # Try rocm-smi first for richer data
+    if shutil.which("rocm-smi"):
+        result = get_amd_gpus_rocm()
+        if result is not None:
+            return result
+
+    # Sysfs fallback
+    return [get_amd_gpu_sysfs(c) for c in cards]
+
+# ---------------------------------------------------------------------------
+# GPU health signals (shared by cmd_health)
+# ---------------------------------------------------------------------------
+
+def gpu_health_signals(vendor):
+    """Returns (signals_list, gpus_list)."""
+    signals, gpus = [], []
+
+    if vendor == "nvidia":
+        all_gpus = get_nvidia_gpus()
+        multi = len(all_gpus) > 1
+        for gpu in all_gpus:
+            tag = f"gpu{gpu['index']}_" if multi else "gpu_"
+            t = gpu.get("temp_c")
+            if t is not None:
+                st = "critical" if t >= 85 else "degraded" if t >= 80 else "ok"
+                signals.append({"name": f"{tag}temp",  "status": st,  "value": t,                   "unit": "C"})
+            p = gpu.get("power_w")
+            if p is not None:
+                signals.append({"name": f"{tag}power", "status": "ok", "value": round(p, 1),        "unit": "W"})
+            gpus.append(gpu)
+
+    elif vendor == "amd":
+        all_gpus = get_amd_gpus()
+        multi = len(all_gpus) > 1
+        for gpu in all_gpus:
+            tag = f"gpu{gpu['index']}_" if multi else "gpu_"
+            t = gpu.get("temp_c")
+            if t is not None:
+                # AMD junction temps run hotter by design
+                st = "critical" if t >= 95 else "degraded" if t >= 85 else "ok"
+                signals.append({"name": f"{tag}temp",  "status": st,  "value": round(t, 1),         "unit": "C"})
+            p = gpu.get("power_w")
+            if p is not None:
+                signals.append({"name": f"{tag}power", "status": "ok", "value": round(p, 1),        "unit": "W"})
+            gpus.append(gpu)
+
+    return signals, gpus
+
+# ---------------------------------------------------------------------------
+# Subcommands
+# ---------------------------------------------------------------------------
+
+def cmd_device_identity():
+    hostname, _ = run(["hostname", "-f"])
+    if not hostname:
+        hostname, _ = run(["hostname"])
+    return envelope("device-identity", {
+        "hostname":     hostname,
+        "product_name": read_file("/sys/class/dmi/id/product_name"),
+        "manufacturer": read_file("/sys/class/dmi/id/sys_vendor"),
+        "board_name":   read_file("/sys/class/dmi/id/board_name"),
+        "bios_version": read_file("/sys/class/dmi/id/bios_version"),
+        "bios_date":    read_file("/sys/class/dmi/id/bios_date"),
+    })
+
+def cmd_os_build():
+    props = {}
+    try:
+        with open("/etc/os-release") as f:
+            for line in f:
+                k, _, v = line.strip().partition("=")
+                props[k] = v.strip('"')
+    except Exception: pass
+    kernel,       _ = run(["uname", "-r"])
+    kernel_build, _ = run(["uname", "-v"])
+    arch,         _ = run(["uname", "-m"])
+    return envelope("os-build", {
+        "os_name":      props.get("NAME", ""),
+        "os_version":   props.get("VERSION_ID", ""),
+        "os_pretty":    props.get("PRETTY_NAME", ""),
+        "kernel":       kernel,
+        "kernel_build": kernel_build,
+        "architecture": arch,
+    })
+
+def cmd_hardware_config():
+    # CPU via lscpu
+    cpu_info = {}
+    out, ok = run(["lscpu", "--json"])
+    if ok:
+        try:
+            entries = {e["field"].rstrip(":"): e["data"]
+                       for e in json.loads(out).get("lscpu", [])}
+            cpu_info = {
+                "model_names":    [entries.get("Model name", "")],
+                "cores":          int(entries.get("CPU(s)", 0) or 0),
+                "threads_per_core": int(entries.get("Thread(s) per core", 1) or 1),
+                "architecture":   entries.get("Architecture", ""),
+            }
+        except Exception: pass
+
+    # RAM
+    mem_bytes = 0
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    mem_bytes = int(line.split()[1]) * 1024; break
+    except Exception: pass
+
+    # GPUs
+    vendor = detect_gpu_vendor()
+    gpus   = get_nvidia_gpus() if vendor == "nvidia" else \
+             get_amd_gpus()    if vendor == "amd"    else []
+
+    # Storage
+    storage = []
+    out, ok = run(["lsblk", "-J", "-o", "NAME,SIZE,TYPE,MOUNTPOINT"])
+    if ok:
+        try:
+            for dev in json.loads(out).get("blockdevices", []):
+                if dev.get("type") == "disk":
+                    storage.append({"name": dev["name"], "size": dev.get("size", "")})
+        except Exception: pass
+
+    # NICs
+    nics = []
+    out, ok = run(["ip", "-j", "link"])
+    if ok:
+        try:
+            for link in json.loads(out):
+                if link.get("link_type") == "ether":
+                    nics.append({"name": link["ifname"], "mac": link.get("address", "")})
+        except Exception: pass
+
+    return envelope("hardware-config", {
+        "cpu":                cpu_info,
+        "gpu_vendor":         vendor,
+        "gpus":               gpus,
+        "total_memory_bytes": mem_bytes,
+        "storage":            storage,
+        "nics":               nics,
+    })
+
+def cmd_firmware():
+    return envelope("firmware", {
+        "uefi_version": read_file("/sys/class/dmi/id/bios_version"),
+        "bios_date":    read_file("/sys/class/dmi/id/bios_date"),
+        "bmc_version":  read_file("/sys/class/dmi/id/chassis_version") or "N/A",
+    })
+
+def cmd_drivers():
+    vendor  = detect_gpu_vendor()
+    entries = []
+
+    if vendor == "nvidia":
+        ver, ok = run(["nvidia-smi", "--query-gpu=driver_version",
+                       "--format=csv,noheader"])
+        if ok and ver:
+            entries.append({"name": "nvidia-driver", "version": ver.splitlines()[0]})
+        out, ok = run(["dpkg-query", "-W", "-f=${Package} ${Version}\n",
+                       "*nvidia*", "*cuda*"])
+        if ok:
+            for line in out.splitlines():
+                p = line.split(None, 1)
+                if len(p) == 2: entries.append({"name": p[0], "version": p[1]})
+
+    elif vendor == "amd":
+        ver, ok = run(["modinfo", "amdgpu", "-F", "version"])
+        if ok and ver:
+            entries.append({"name": "amdgpu", "version": ver})
+        out, ok = run(["dpkg-query", "-W", "-f=${Package} ${Version}\n",
+                       "*amdgpu*", "*rocm*"])
+        if ok:
+            for line in out.splitlines():
+                p = line.split(None, 1)
+                if len(p) == 2: entries.append({"name": p[0], "version": p[1]})
+
+    return envelope("drivers", {"gpu_vendor": vendor, "entries": entries})
+
+def cmd_software():
+    count = 0
+    out, ok = run(["dpkg-query", "-W", "-f=${Status}\n"], timeout=30)
+    if ok:
+        count = sum(1 for line in out.splitlines() if "installed" in line)
+    return envelope("software", {"package_count": count})
+
+def cmd_health():
+    vendor          = detect_gpu_vendor()
+    signals         = []
+    gpu_signals, gpus = gpu_health_signals(vendor)
+
+    # CPU temperature via lm-sensors (best-effort)
+    if shutil.which("sensors"):
+        out, ok = run(["sensors", "-j"], timeout=5)
+        if ok and out:
+            try:
+                max_t = max(
+                    (v for chip in json.loads(out).values()
+                     for sensor in chip.values() if isinstance(sensor, dict)
+                     for k, v in sensor.items()
+                     if "input" in k and isinstance(v, (int, float))),
+                    default=None
+                )
+                if max_t is not None:
+                    st = "critical" if max_t >= 95 else "degraded" if max_t >= 85 else "ok"
+                    signals.append({"name": "cpu_temp", "status": st,
+                                    "value": round(max_t, 1), "unit": "C"})
+            except Exception: pass
+
+    # Memory pressure
+    try:
+        mem = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, _, v = line.partition(":")
+                mem[k.strip()] = int(v.strip().split()[0]) * 1024
+        total, avail = mem.get("MemTotal", 0), mem.get("MemAvailable", 0)
+        if total:
+            pct = (total - avail) / total * 100
+            st  = "critical" if pct >= 95 else "degraded" if pct >= 85 else "ok"
+            signals.append({"name": "memory_pressure", "status": st,
+                            "value": round(pct, 1), "unit": "%"})
+    except Exception: pass
+
+    # Root disk usage
+    out, ok = run(["df", "-k", "/"])
+    if ok:
+        try:
+            parts = out.splitlines()[1].split()
+            pct   = float(parts[4].rstrip("%"))
+            st    = "critical" if pct >= 95 else "degraded" if pct >= 85 else "ok"
+            signals.append({"name": "disk_usage_root", "status": st,
+                            "value": round(pct, 1), "unit": "%"})
+        except Exception: pass
+
+    signals.extend(gpu_signals)
+
+    statuses = [s["status"] for s in signals]
+    if "critical" in statuses:   overall = "critical"
+    elif "degraded" in statuses: overall = "degraded"
+    elif statuses:               overall = "healthy"
+    else:                        overall = "unknown"
+
+    return envelope("health", {
+        "overall_status": overall,
+        "gpu_vendor":     vendor,
+        "signals":        signals,
+        "gpus":           gpus,
+    })
+
+def cmd_updates():
+    # ── apt packages ──────────────────────────────────────────────────────────
+    out, ok = run(["apt", "list", "--upgradable"], timeout=60)
+    apt_updates = []
+    if ok:
+        for line in out.splitlines():
+            if "/" not in line or line.startswith("Listing"): continue
+            parts = line.split()
+            apt_updates.append({
+                "name":    parts[0].split("/")[0],
+                "version": parts[1] if len(parts) > 1 else "",
+                "type":    "apt",
+            })
+
+    # ── firmware via fwupd ────────────────────────────────────────────────────
+    # fwupdmgr exits 2 when nothing to update — always try to parse output.
+    fw_updates = []
+    if shutil.which("fwupdmgr"):
+        fw_out, _ = run(["fwupdmgr", "get-updates", "--json"], timeout=60)
+        if fw_out.strip():
+            try:
+                fw_data = json.loads(fw_out)
+                for dev in fw_data.get("Devices", []):
+                    releases = dev.get("Releases", [])
+                    if releases:
+                        fw_updates.append({
+                            "name":    dev.get("Name", "Unknown firmware"),
+                            "version": releases[0].get("Version", ""),
+                            "type":    "firmware",
+                        })
+            except Exception:
+                pass
+
+    all_updates = apt_updates + fw_updates
+    return envelope("updates", {
+        "status":          "updates_available" if all_updates else "up_to_date",
+        "pending_updates": all_updates,
+        "apt_count":       len(apt_updates),
+        "firmware_count":  len(fw_updates),
+    })
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+SUBCOMMANDS = {
+    "device-identity": cmd_device_identity,
+    "os-build":        cmd_os_build,
+    "hardware-config": cmd_hardware_config,
+    "firmware":        cmd_firmware,
+    "drivers":         cmd_drivers,
+    "software":        cmd_software,
+    "health":          cmd_health,
+    "updates":         cmd_updates,
+}
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2 or sys.argv[1] not in SUBCOMMANDS:
+        print(json.dumps({"error": f"Usage: zgx-collector <{'|'.join(SUBCOMMANDS)}>"}))
+        sys.exit(1)
+    try:
+        print(json.dumps(SUBCOMMANDS[sys.argv[1]]()))
+    except Exception as exc:
+        print(json.dumps({"tool": sys.argv[1], "status": "error", "error": str(exc)}))
+        sys.exit(1)

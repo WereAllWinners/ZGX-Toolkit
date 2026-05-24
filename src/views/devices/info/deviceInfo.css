@@ -1,0 +1,168 @@
+/*
+ * Copyright ©2025 HP Development Company, L.P.
+ * Licensed under the X11 License. See LICENSE file in the project root for details.
+ */
+
+.container {
+    padding: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+    color: var(--vscode-foreground);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+}
+
+/* Header */
+.header {
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    padding-bottom: 16px;
+}
+
+.header-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 1.5em;
+    font-weight: 600;
+    color: var(--vscode-foreground);
+}
+
+.header-subtitle {
+    margin: 4px 0 0;
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.9em;
+}
+
+.collected-at {
+    margin: 4px 0 0;
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.8em;
+    font-style: italic;
+}
+
+/* Buttons */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+}
+
+.btn:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+.btn.btn-secondary {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+}
+
+.btn.btn-secondary:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* Empty state */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 60px 20px;
+    gap: 16px;
+    color: var(--vscode-descriptionForeground);
+    text-align: center;
+}
+
+.empty-state .codicon {
+    font-size: 48px;
+    opacity: 0.5;
+}
+
+/* Sections */
+.info-section {
+    margin-bottom: 24px;
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.info-section h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 10px 16px;
+    font-size: 0.95em;
+    font-weight: 600;
+    background: var(--vscode-sideBarSectionHeader-background);
+    color: var(--vscode-sideBarSectionHeader-foreground);
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+/* Info grid */
+.info-grid {
+    padding: 4px 0;
+}
+
+.info-row {
+    display: flex;
+    padding: 6px 16px;
+    gap: 16px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    flex: 0 0 160px;
+    color: var(--vscode-descriptionForeground);
+    font-size: 0.88em;
+}
+
+.info-value {
+    flex: 1;
+    word-break: break-all;
+}
+
+.info-value.mono {
+    font-family: var(--vscode-editor-font-family);
+    font-size: 0.9em;
+}
+
+/* Health status badge */
+.health-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    font-weight: 600;
+    font-size: 1em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.status-healthy  { color: var(--vscode-testing-iconPassed); }
+.status-degraded { color: var(--vscode-editorWarning-foreground); }
+.status-critical { color: var(--vscode-editorError-foreground); }
+.status-unknown  { color: var(--vscode-descriptionForeground); }
+
+/* Signal rows */
+.signal-row { font-size: 0.88em; }
+.signal-pass { color: var(--vscode-testing-iconPassed); }
+.signal-fail { color: var(--vscode-editorError-foreground); }
+.signal-warn { color: var(--vscode-editorWarning-foreground); }
+.signal-unknown { color: var(--vscode-descriptionForeground); }

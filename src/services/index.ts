@@ -19,3 +19,5 @@ export { ExtensionStateService, extensionStateService } from './extensionStateSe
 export { DNSServiceRegistration, dnsServiceRegistration } from './dnsRegistrationService';
 export { ConnectXGroupService, connectxGroupService } from './connectxGroupService';
 export { DeviceHealthCheckService, deviceHealthCheckService } from './deviceHealthCheckService';
+export { ManageabilityService, manageabilityService, InstallCollectorResult } from './manageabilityService';
+export { UserGroupService, userGroupService } from './userGroupService';

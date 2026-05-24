@@ -1,0 +1,811 @@
+/*
+ * Copyright ©2025 HP Development Company, L.P.
+ * Licensed under the X11 License. See LICENSE file in the project root for details.
+ */
+
+import * as vscode from 'vscode';
+import { BaseViewController } from '../baseViewController';
+import { Logger } from '../../utils/logger';
+import { ITelemetryService } from '../../types/telemetry';
+import { Message } from '../../types/messages';
+import { DeviceService } from '../../services/deviceService';
+import { ManageabilityService, ApplyUpdatesResult } from '../../services/manageabilityService';
+import { UserGroupService } from '../../services/userGroupService';
+import { ManageabilitySnapshot } from '../../types/manageability';
+import { DeviceInfoViewController } from '../devices/info/deviceInfoViewController';
+
+const HEALTH_ICONS: Record<string, string> = {
+    healthy:  'codicon-pass-filled',
+    degraded: 'codicon-warning',
+    critical: 'codicon-error',
+    unknown:  'codicon-question',
+    none:     'codicon-circle-slash',
+};
+
+const HEALTH_LABELS: Record<string, string> = {
+    healthy:  'Healthy',
+    degraded: 'Degraded',
+    critical: 'Critical',
+    unknown:  'Unknown',
+    none:     'No data',
+};
+
+export class AdminDashboardViewController extends BaseViewController {
+    private deviceService: DeviceService;
+    private manageabilityService: ManageabilityService;
+    private userGroupService: UserGroupService;
+    private outputChannel: vscode.OutputChannel | undefined;
+
+    public static viewId(): string {
+        return 'admin/dashboard';
+    }
+
+    constructor(deps: {
+        logger: Logger;
+        telemetry: ITelemetryService;
+        deviceService: DeviceService;
+        manageabilityService: ManageabilityService;
+        userGroupService: UserGroupService;
+    }) {
+        super(deps.logger, deps.telemetry);
+        this.deviceService = deps.deviceService;
+        this.manageabilityService = deps.manageabilityService;
+        this.userGroupService = deps.userGroupService;
+
+        this.template     = this.loadTemplate('./adminDashboard.html', __dirname);
+        this.styles       = this.loadTemplate('./adminDashboard.css',  __dirname);
+        this.clientScript = this.loadTemplate('./adminDashboard.js',   __dirname);
+    }
+
+    async render(_params?: any, nonce?: string): Promise<string> {
+        const devices = await this.deviceService.getAllDevices();
+        const allGroups = this.userGroupService.getAllGroups();
+
+        // Check collector presence in parallel for all set-up devices
+        const collectorChecks = await Promise.allSettled(
+            devices.map(d => d.isSetup
+                ? this.manageabilityService.hasCollector(d).then(has => ({ id: d.id, has }))
+                : Promise.resolve({ id: d.id, has: false })
+            )
+        );
+        const hasCollectorMap = new Map<string, boolean>(
+            collectorChecks
+                .filter((r): r is PromiseFulfilledResult<{ id: string; has: boolean }> => r.status === 'fulfilled')
+                .map(r => [r.value.id, r.value.has])
+        );
+
+        // Build a map of deviceId → { group names, group IDs } for device cards + form checkboxes
+        const deviceGroupNames = new Map<string, string[]>();
+        const deviceGroupIds   = new Map<string, string[]>();
+        for (const group of allGroups) {
+            for (const deviceId of group.deviceIds) {
+                const names = deviceGroupNames.get(deviceId) ?? [];
+                names.push(group.name);
+                deviceGroupNames.set(deviceId, names);
+                const ids = deviceGroupIds.get(deviceId) ?? [];
+                ids.push(group.id);
+                deviceGroupIds.set(deviceId, ids);
+            }
+        }
+
+        const cardData: Record<string, any>[] = devices.map(d => ({
+            ...this.buildCardData(d),
+            hasCollector: hasCollectorMap.get(d.id) ?? false,
+            groupNames:   deviceGroupNames.get(d.id) ?? [],
+            groupIdsCsv:  (deviceGroupIds.get(d.id) ?? []).join(','),
+        }));
+
+        const healthyCount  = cardData.filter(c => c.healthStatus === 'healthy').length;
+        const degradedCount = cardData.filter(c => c.healthStatus === 'degraded' || c.healthStatus === 'critical').length;
+
+        // Build group template data
+        const deviceNameMap = new Map(devices.map(d => [d.id, d.name]));
+        const userGroups = allGroups.map(g => ({
+            id:           g.id,
+            name:         g.name,
+            description:  g.description,
+            deviceCount:  g.deviceIds.length,
+            singleDevice: g.deviceIds.length === 1,
+            deviceNames:  g.deviceIds.map(id => deviceNameMap.get(id) ?? id),
+        }));
+
+        const body = this.renderTemplate(this.template, {
+            devices:       cardData,
+            totalDevices:  devices.length,
+            hasDevices:    devices.length > 0,
+            singleDevice:  devices.length === 1,
+            healthyCount:  healthyCount  || undefined,
+            degradedCount: degradedCount || undefined,
+            userGroups,
+            hasUserGroups: userGroups.length > 0,
+        });
+
+        return this.wrapHtml(body, nonce);
+    }
+
+    async handleMessage(message: Message): Promise<void> {
+        await super.handleMessage(message);
+
+        const msg = message as any;
+
+        switch (msg.type) {
+            case 'refreshAll':
+                await this.refresh();
+                break;
+
+            case 'runInventory':
+                await this.handleRunInventory(msg.deviceId);
+                break;
+
+            case 'viewDetails':
+                await this.navigateTo(DeviceInfoViewController.viewId(), { deviceId: msg.deviceId }, 'editor');
+                break;
+
+            case 'checkUpdates':
+                await this.handleCheckUpdates(msg.deviceId);
+                break;
+
+            case 'createGroup':
+                await this.handleCreateGroup(msg.name, msg.description, msg.deviceIds);
+                break;
+
+            case 'updateGroup':
+                await this.handleUpdateGroup(msg.groupId, msg.name, msg.description, msg.deviceIds);
+                break;
+
+            case 'deleteGroup':
+                await this.handleDeleteGroup(msg.groupId);
+                break;
+
+            case 'setupManageability':
+                await this.handleSetupManageability(msg.deviceId);
+                break;
+
+            case 'applyUpdates':
+                await this.handleApplyUpdates(msg.deviceId);
+                break;
+
+            case 'groupApplyUpdates':
+                await this.handleGroupApplyUpdates(msg.groupId);
+                break;
+
+            case 'groupInventory':
+                await this.handleGroupInventory(msg.groupId);
+                break;
+
+            case 'groupHealth':
+                await this.handleGroupHealth(msg.groupId);
+                break;
+
+            case 'groupUpdates':
+                await this.handleGroupUpdates(msg.groupId);
+                break;
+        }
+    }
+
+    // ── Group handlers ─────────────────────────────────────────────────────
+
+    private async handleCreateGroup(name: string, description: string, deviceIds: string[]): Promise<void> {
+        try {
+            const group = this.userGroupService.createGroup({ name, description: description || undefined, deviceIds });
+            this.logger.info('User group created via dashboard', { id: group.id, name: group.name });
+        } catch (error) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Failed to create group — ${error instanceof Error ? error.message : String(error)}`
+            );
+        } finally {
+            await this.refresh();
+        }
+    }
+
+    private async handleUpdateGroup(groupId: string, name: string, description: string, deviceIds: string[]): Promise<void> {
+        try {
+            this.userGroupService.updateGroup(groupId, { name, description: description || undefined, deviceIds });
+        } catch (error) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Failed to update group — ${error instanceof Error ? error.message : String(error)}`
+            );
+        } finally {
+            await this.refresh();
+        }
+    }
+
+    private async handleDeleteGroup(groupId: string): Promise<void> {
+        const group = this.userGroupService.getGroup(groupId);
+        const label = group?.name ?? groupId;
+        const answer = await vscode.window.showWarningMessage(
+            `Delete group "${label}"? This cannot be undone.`,
+            { modal: true },
+            'Delete'
+        );
+        if (answer !== 'Delete') { return; }
+        this.userGroupService.deleteGroup(groupId);
+        await this.refresh();
+    }
+
+    // ── Setup manageability ────────────────────────────────────────────────
+
+    private async handleSetupManageability(deviceId: string): Promise<void> {
+        const device = await this.deviceService.getDevice(deviceId);
+        if (!device) { return; }
+
+        try {
+            const result = await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `ZGX Toolkit: Installing collector on ${device.name}…`,
+                    cancellable: false,
+                },
+                () => this.manageabilityService.installCollector(device),
+            );
+
+            if (result.success) {
+                vscode.window.showInformationMessage(
+                    `ZGX Toolkit: Manageability tools installed on ${device.name}. Running initial inventory…`
+                );
+                // Kick off inventory so the card populates immediately
+                await this.manageabilityService.collectInventory(device);
+            } else {
+                vscode.window.showErrorMessage(
+                    `ZGX Toolkit: Setup failed on ${device.name} — ${result.error}`
+                );
+            }
+        } catch (error) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Setup failed — ${error instanceof Error ? error.message : String(error)}`
+            );
+            this.logger.error('Admin dashboard: setupManageability failed', { deviceId, error });
+        } finally {
+            this.sendMessageToWebview({ type: 'clearLoading', deviceId });
+            await this.refresh();
+        }
+    }
+
+    // ── Apply updates handlers ─────────────────────────────────────────────
+
+    private async handleApplyUpdates(deviceId: string): Promise<void> {
+        const device = await this.deviceService.getDevice(deviceId);
+        if (!device) { return; }
+
+        try {
+            // Check first so the confirmation dialog is informative
+            const checkResult = await this.manageabilityService.getUpdatePosture(device);
+            const pending = checkResult.success ? (checkResult.envelope?.data?.pending_updates ?? []) : [];
+
+            if (checkResult.success && pending.length === 0) {
+                vscode.window.showInformationMessage(`ZGX Toolkit: ${device.name} is already up to date.`);
+                return;
+            }
+
+            const countLabel = checkResult.success
+                ? `${pending.length} update${pending.length === 1 ? '' : 's'}`
+                : 'available updates (count unavailable)';
+
+            const answer = await vscode.window.showWarningMessage(
+                `Apply ${countLabel} on "${device.name}"? The device may restart services during the upgrade.`,
+                { modal: true },
+                'Apply Updates'
+            );
+            if (answer !== 'Apply Updates') { return; }
+
+            // First attempt — works for NOPASSWD systems, fast-fails otherwise
+            let result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `ZGX Toolkit: Applying updates on ${device.name}…`, cancellable: false },
+                () => this.manageabilityService.applyUpdates(device),
+            );
+
+            // Sudo password required — prompt and retry once
+            if (result.requiresPassword) {
+                const password = await vscode.window.showInputBox({
+                    prompt: `Enter sudo password for ${device.name}`,
+                    password: true,
+                    ignoreFocusOut: true,
+                    placeHolder: 'sudo password',
+                });
+                if (!password) { return; }
+
+                result = await vscode.window.withProgress(
+                    { location: vscode.ProgressLocation.Notification, title: `ZGX Toolkit: Applying updates on ${device.name}…`, cancellable: false },
+                    () => this.manageabilityService.applyUpdates(device, password),
+                );
+            }
+
+            this.handleApplyResult(result, device.name);
+        } catch (error) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Update failed — ${error instanceof Error ? error.message : String(error)}`
+            );
+            this.logger.error('Admin dashboard: applyUpdates failed', { deviceId, error });
+        } finally {
+            this.sendMessageToWebview({ type: 'clearLoading', deviceId });
+            await this.refresh();
+        }
+    }
+
+    private async handleGroupApplyUpdates(groupId: string): Promise<void> {
+        const { group, devices } = await this.resolveGroup(groupId);
+        if (!group || devices.length === 0) { return; }
+
+        try {
+            // Check all devices first to give an accurate count in the confirmation
+            const checkResults = await Promise.allSettled(
+                devices.map(d => this.manageabilityService.getUpdatePosture(d).then(r => ({ device: d, result: r })))
+            );
+
+            let totalPending = 0;
+            const devicesNeedingUpdates: typeof devices = [];
+
+            for (const r of checkResults) {
+                if (r.status === 'fulfilled' && r.value.result.success) {
+                    const count = r.value.result.envelope?.data?.pending_updates?.length ?? 0;
+                    if (count > 0) {
+                        totalPending += count;
+                        devicesNeedingUpdates.push(r.value.device);
+                    }
+                }
+            }
+
+            if (devicesNeedingUpdates.length === 0) {
+                vscode.window.showInformationMessage(`ZGX Toolkit: All devices in "${group.name}" are already up to date.`);
+                return;
+            }
+
+            const answer = await vscode.window.showWarningMessage(
+                `Apply ${totalPending} update${totalPending === 1 ? '' : 's'} across ${devicesNeedingUpdates.length} device${devicesNeedingUpdates.length === 1 ? '' : 's'} in "${group.name}"? Services may restart during the upgrade.`,
+                { modal: true },
+                'Apply Updates'
+            );
+            if (answer !== 'Apply Updates') { return; }
+
+            // First attempt without password — works for NOPASSWD systems
+            const firstPass = await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `ZGX Toolkit: Applying updates across "${group.name}"…`,
+                    cancellable: false,
+                },
+                () => Promise.allSettled(devicesNeedingUpdates.map(d =>
+                    this.manageabilityService.applyUpdates(d).then(r => ({ device: d, result: r }))
+                )),
+            );
+
+            // Collect devices that need a sudo password
+            type DeviceResult = { device: typeof devicesNeedingUpdates[0]; result: import('../../services/manageabilityService').ApplyUpdatesResult };
+            const resultMap = new Map<string, DeviceResult>();
+            const needsPassword: typeof devicesNeedingUpdates = [];
+
+            for (const r of firstPass) {
+                if (r.status === 'fulfilled') {
+                    resultMap.set(r.value.device.id, r.value);
+                    if (r.value.result.requiresPassword) { needsPassword.push(r.value.device); }
+                }
+            }
+
+            // If any device needs a password, prompt once and retry those devices
+            if (needsPassword.length > 0) {
+                const password = await vscode.window.showInputBox({
+                    prompt: `Enter sudo password for ${needsPassword.length === 1 ? needsPassword[0].name : `${needsPassword.length} devices in "${group.name}"`}`,
+                    password: true,
+                    ignoreFocusOut: true,
+                    placeHolder: 'sudo password',
+                });
+                if (password) {
+                    const retryPass = await vscode.window.withProgress(
+                        { location: vscode.ProgressLocation.Notification, title: `ZGX Toolkit: Retrying updates with password…`, cancellable: false },
+                        () => Promise.allSettled(needsPassword.map(d =>
+                            this.manageabilityService.applyUpdates(d, password).then(r => ({ device: d, result: r }))
+                        )),
+                    );
+                    for (const r of retryPass) {
+                        if (r.status === 'fulfilled') { resultMap.set(r.value.device.id, r.value); }
+                    }
+                }
+            }
+
+            const channel = this.getOutputChannel();
+            channel.show(true);
+            channel.appendLine(`\n[${new Date().toISOString()}] Apply updates — "${group.name}"`);
+
+            let successCount = 0;
+            let failCount = 0;
+            for (const { device, result } of resultMap.values()) {
+                if (result.success) {
+                    channel.appendLine(`  ${device.name}: OK`);
+                    successCount++;
+                } else {
+                    channel.appendLine(`  ${device.name}: FAILED — ${result.error}`);
+                    failCount++;
+                }
+            }
+
+            if (failCount === 0) {
+                vscode.window.showInformationMessage(
+                    `ZGX Toolkit: Updates applied to all ${successCount} device${successCount === 1 ? '' : 's'} in "${group.name}".`
+                );
+            } else {
+                vscode.window.showWarningMessage(
+                    `ZGX Toolkit: ${successCount} succeeded, ${failCount} failed in "${group.name}". See output for details.`
+                );
+            }
+        } catch (error) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Group update failed — ${error instanceof Error ? error.message : String(error)}`
+            );
+            this.logger.error('Admin dashboard: groupApplyUpdates failed', { groupId, error });
+        } finally {
+            this.postGroupMessage('clearLoading', groupId);
+            await this.refresh();
+        }
+    }
+
+    private handleApplyResult(result: ApplyUpdatesResult, deviceName: string): void {
+        const channel = this.getOutputChannel();
+        if (result.success) {
+            vscode.window.showInformationMessage(
+                `ZGX Toolkit: Updates applied on ${deviceName}. See the ZGX Toolkit output channel for details.`
+            );
+            channel.appendLine(`\n[${new Date().toISOString()}] Apply updates complete — ${deviceName}`);
+            if (result.output) { channel.appendLine(result.output); }
+            channel.show(true);
+        } else {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Update failed on ${deviceName} — ${result.error ?? 'unknown error'}. See the ZGX Toolkit output channel for details.`
+            );
+            channel.appendLine(`\n[${new Date().toISOString()}] Apply updates failed — ${deviceName}`);
+            if (result.output) { channel.appendLine(result.output); }
+            channel.show(true);
+        }
+    }
+
+    // ── Bulk group operation handlers ──────────────────────────────────────
+
+    private async handleGroupInventory(groupId: string): Promise<void> {
+        const { group, devices } = await this.resolveGroup(groupId);
+        if (!group || devices.length === 0) { return; }
+
+        const label = `${group.name} (${devices.length} device${devices.length === 1 ? '' : 's'})`;
+
+        try {
+            const results = await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `ZGX Toolkit: Running inventory on ${label}…`,
+                    cancellable: false,
+                },
+                () => Promise.allSettled(devices.map(d => this.manageabilityService.collectInventory(d))),
+            );
+
+            const failed = results.filter(r => r.status === 'rejected');
+            if (failed.length === 0) {
+                vscode.window.showInformationMessage(
+                    `ZGX Toolkit: Inventory complete for all ${devices.length} device${devices.length === 1 ? '' : 's'} in "${group.name}".`
+                );
+            } else {
+                vscode.window.showWarningMessage(
+                    `ZGX Toolkit: Inventory finished — ${devices.length - failed.length}/${devices.length} succeeded in "${group.name}".`
+                );
+            }
+        } catch (error) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Group inventory failed — ${error instanceof Error ? error.message : String(error)}`
+            );
+            this.logger.error('Admin dashboard: groupInventory failed', { groupId, error });
+        } finally {
+            this.postGroupMessage('clearLoading', groupId);
+            await this.refresh();
+        }
+    }
+
+    private async handleGroupHealth(groupId: string): Promise<void> {
+        const { group, devices } = await this.resolveGroup(groupId);
+        if (!group || devices.length === 0) { return; }
+
+        const channel = this.getOutputChannel();
+        channel.show(true);
+        channel.appendLine(`\n[${new Date().toISOString()}] Health check — "${group.name}" (${devices.length} devices)`);
+
+        try {
+            const results = await Promise.allSettled(
+                devices.map(d => this.manageabilityService.getHealthPosture(d).then(r => ({ device: d, result: r })))
+            );
+
+            let healthyCount = 0;
+            let problemCount = 0;
+
+            for (const r of results) {
+                if (r.status === 'rejected') {
+                    channel.appendLine(`  ERROR fetching health for a device: ${r.reason}`);
+                    problemCount++;
+                    continue;
+                }
+                const { device, result } = r.value;
+                if (!result.success || !result.envelope) {
+                    channel.appendLine(`  ${device.name}: ERROR — ${result.error ?? 'no data'}`);
+                    problemCount++;
+                } else {
+                    const status = result.envelope.data.overall_status;
+                    channel.appendLine(`  ${device.name}: ${status.toUpperCase()}`);
+                    if (status === 'healthy') { healthyCount++; } else { problemCount++; }
+                }
+            }
+
+            channel.appendLine(`\nSummary: ${healthyCount} healthy, ${problemCount} with issues.`);
+
+            if (problemCount === 0) {
+                vscode.window.showInformationMessage(`ZGX Toolkit: All ${devices.length} devices in "${group.name}" are healthy.`);
+            } else {
+                vscode.window.showWarningMessage(`ZGX Toolkit: ${problemCount} device${problemCount === 1 ? '' : 's'} in "${group.name}" need attention. See output for details.`);
+            }
+        } catch (error) {
+            channel.appendLine(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.error('Admin dashboard: groupHealth failed', { groupId, error });
+        } finally {
+            this.postGroupMessage('clearLoading', groupId);
+        }
+    }
+
+    private async handleGroupUpdates(groupId: string): Promise<void> {
+        const { group, devices } = await this.resolveGroup(groupId);
+        if (!group || devices.length === 0) { return; }
+
+        const channel = this.getOutputChannel();
+        channel.show(true);
+        channel.appendLine(`\n[${new Date().toISOString()}] Update check — "${group.name}" (${devices.length} devices)`);
+
+        try {
+            const results = await Promise.allSettled(
+                devices.map(d => this.manageabilityService.getUpdatePosture(d).then(r => ({ device: d, result: r })))
+            );
+
+            let upToDate = 0;
+            let totalPending = 0;
+            let errorCount = 0;
+
+            for (const r of results) {
+                if (r.status === 'rejected') {
+                    channel.appendLine(`  ERROR checking updates for a device: ${r.reason}`);
+                    errorCount++;
+                    continue;
+                }
+                const { device, result } = r.value;
+                if (!result.success || !result.envelope) {
+                    channel.appendLine(`  ${device.name}: ERROR — ${result.error ?? 'no data'}`);
+                    errorCount++;
+                } else {
+                    const pending = result.envelope.data.pending_updates;
+                    if (pending.length === 0) {
+                        channel.appendLine(`  ${device.name}: up to date`);
+                        upToDate++;
+                    } else {
+                        const aptPending = pending.filter(u => u.type === 'apt');
+                        const fwPending  = pending.filter(u => u.type === 'firmware');
+                        const label = [
+                            aptPending.length > 0 ? `${aptPending.length} apt` : '',
+                            fwPending.length  > 0 ? `${fwPending.length} firmware` : '',
+                        ].filter(Boolean).join(', ');
+                        channel.appendLine(`  ${device.name}: ${label} update${pending.length === 1 ? '' : 's'} pending`);
+                        for (const u of pending) {
+                            channel.appendLine(`    [${u.type}] ${u.name}  →  ${u.version}`);
+                        }
+                        totalPending += pending.length;
+                    }
+                }
+            }
+
+            channel.appendLine(`\nSummary: ${upToDate} up to date, ${totalPending} update(s) pending across ${devices.length - errorCount} reachable devices.`);
+
+            if (totalPending === 0 && errorCount === 0) {
+                vscode.window.showInformationMessage(`ZGX Toolkit: All devices in "${group.name}" are up to date.`);
+            } else if (totalPending > 0) {
+                vscode.window.showWarningMessage(`ZGX Toolkit: ${totalPending} update(s) available across "${group.name}". See output for details.`);
+            } else {
+                vscode.window.showWarningMessage(`ZGX Toolkit: Update check incomplete — ${errorCount} device${errorCount === 1 ? '' : 's'} unreachable.`);
+            }
+        } catch (error) {
+            channel.appendLine(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.error('Admin dashboard: groupUpdates failed', { groupId, error });
+        } finally {
+            this.postGroupMessage('clearLoading', groupId);
+        }
+    }
+
+    /** Resolve a group and its live Device objects in one call. */
+    private async resolveGroup(groupId: string): Promise<{ group: import('../../types/userGroup').UserGroup | undefined; devices: any[] }> {
+        const group = this.userGroupService.getGroup(groupId);
+        if (!group) {
+            vscode.window.showErrorMessage(`ZGX Toolkit: Group not found.`);
+            return { group: undefined, devices: [] };
+        }
+        const deviceResults = await Promise.allSettled(
+            group.deviceIds.map(id => this.deviceService.getDevice(id))
+        );
+        const devices = deviceResults
+            .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled' && r.value != null)
+            .map(r => r.value);
+
+        if (devices.length === 0) {
+            vscode.window.showWarningMessage(`ZGX Toolkit: No reachable devices in "${group.name}".`);
+        }
+        return { group, devices };
+    }
+
+    /** Send a message to the webview (used to clear loading states after async ops). */
+    private postGroupMessage(type: string, groupId: string): void {
+        try {
+            this.sendMessageToWebview({ type, groupId });
+        } catch {
+            // webview may have been disposed; ignore
+        }
+    }
+
+    // ── Private helpers ────────────────────────────────────────────────────
+
+    private async handleRunInventory(deviceId: string): Promise<void> {
+        const device = await this.deviceService.getDevice(deviceId);
+        if (!device) { return; }
+
+        try {
+            await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title:    `ZGX Toolkit: Running inventory on ${device.name}…`,
+                    cancellable: false,
+                },
+                () => this.manageabilityService.collectInventory(device),
+            );
+            vscode.window.showInformationMessage(`ZGX Toolkit: Inventory complete for ${device.name}`);
+        } catch (error) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Inventory failed — ${error instanceof Error ? error.message : String(error)}`,
+            );
+            this.logger.error('Admin dashboard: runInventory failed', { device: device.name, error });
+        } finally {
+            this.sendMessageToWebview({ type: 'clearLoading', deviceId });
+            await this.refresh();
+        }
+    }
+
+    private async handleCheckUpdates(deviceId: string): Promise<void> {
+        const device = await this.deviceService.getDevice(deviceId);
+        if (!device) { return; }
+
+        const channel = this.getOutputChannel();
+        channel.show(true);
+        channel.appendLine(`\n[${new Date().toISOString()}] Update check — ${device.name}`);
+
+        try {
+            const result = await this.manageabilityService.getUpdatePosture(device);
+
+            if (!result.success || !result.envelope) {
+                channel.appendLine(`ERROR: ${result.error ?? 'No data returned'}`);
+                vscode.window.showErrorMessage(`ZGX Toolkit: Update check failed for ${device.name}`);
+                return;
+            }
+
+            const { status, pending_updates, apt_count, firmware_count } = result.envelope.data;
+            channel.appendLine(`Status: ${status}`);
+
+            if (pending_updates.length === 0) {
+                channel.appendLine('All packages and firmware are up to date.');
+                vscode.window.showInformationMessage(`ZGX Toolkit: ${device.name} is up to date`);
+            } else {
+                const aptUpdates = pending_updates.filter(u => u.type === 'apt');
+                const fwUpdates  = pending_updates.filter(u => u.type === 'firmware');
+
+                if (aptUpdates.length > 0) {
+                    channel.appendLine(`\nApt packages (${aptUpdates.length}):`);
+                    for (const u of aptUpdates) { channel.appendLine(`  ${u.name}  →  ${u.version}`); }
+                }
+                if (fwUpdates.length > 0) {
+                    channel.appendLine(`\nFirmware (${fwUpdates.length}):`);
+                    for (const u of fwUpdates) { channel.appendLine(`  ${u.name}  →  ${u.version}`); }
+                }
+
+                const parts: string[] = [];
+                if ((apt_count ?? aptUpdates.length) > 0)      { parts.push(`${apt_count ?? aptUpdates.length} apt`); }
+                if ((firmware_count ?? fwUpdates.length) > 0)  { parts.push(`${firmware_count ?? fwUpdates.length} firmware`); }
+                vscode.window.showWarningMessage(
+                    `${device.name}: ${parts.join(', ')} update(s) available`,
+                );
+            }
+        } catch (error) {
+            channel.appendLine(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.error('Admin dashboard: checkUpdates failed', { device: device.name, error });
+        } finally {
+            this.sendMessageToWebview({ type: 'clearLoading', deviceId });
+            await this.refresh();
+        }
+    }
+
+    private getOutputChannel(): vscode.OutputChannel {
+        if (!this.outputChannel) {
+            this.outputChannel = vscode.window.createOutputChannel('ZGX Toolkit');
+        }
+        return this.outputChannel;
+    }
+
+    private buildCardData(device: any): Record<string, any> {
+        const base = {
+            id:      device.id,
+            name:    device.name,
+            host:    device.host,
+            port:    device.port,
+            isSetup: device.isSetup,
+        };
+
+        const snapshot = device.metadata?.manageabilitySnapshot as ManageabilitySnapshot | undefined;
+        if (!snapshot) {
+            return {
+                ...base,
+                hasSnapshot:       false,
+                healthStatus:      'none',
+                healthStatusLabel: HEALTH_LABELS['none'],
+                healthIcon:        HEALTH_ICONS['none'],
+            };
+        }
+
+        const id   = snapshot.identity?.data as any;
+        const hw   = snapshot.hardware?.data as any;
+        const hlth = snapshot.health?.data   as any;
+
+        const healthStatus = (hlth?.overall_status as string | undefined) ?? 'unknown';
+
+        // ── GPU summary ──────────────────────────────────────────────────────
+        // Prefer health gpus (fresher temp/power) then fall back to hardware gpus
+        const gpus: any[] = (hlth?.gpus?.length ? hlth.gpus : hw?.gpus) ?? [];
+        const gpuVendor: string = hw?.gpu_vendor ?? hlth?.gpu_vendor ?? 'none';
+
+        let gpuSummary: string | null = null;
+        let unifiedMemory = false;
+
+        if (gpus.length > 0) {
+            // Hottest GPU drives the summary temp/power
+            const hottest = gpus.reduce((a: any, b: any) =>
+                (b.temp_c ?? 0) > (a.temp_c ?? 0) ? b : a, gpus[0]);
+
+            const tempVal   = hottest.temp_c  != null && hottest.temp_c  > 0 ? hottest.temp_c  : null;
+            const powerVal  = hottest.power_w != null && hottest.power_w > 0 ? hottest.power_w : null;
+            const tempClass = tempVal != null ? (tempVal >= 80 ? 'temp-hot' : tempVal >= 65 ? 'temp-warm' : '') : '';
+
+            const displayName = gpus.length > 1
+                ? `${gpus.length}× ${hottest.name ?? gpuVendor.toUpperCase()}`
+                : (hottest.name ?? '');
+
+            const tempStr  = tempVal  != null ? ` · <span class="metric ${tempClass}">${tempVal}°C</span>` : '';
+            const powerStr = powerVal != null ? ` · ${Math.round(powerVal * 10) / 10} W` : '';
+
+            gpuSummary = `${displayName}${tempStr}${powerStr}`;
+
+            // Unified memory: any GPU in the list flagged as unified
+            unifiedMemory = gpus.some((g: any) => g.unified_memory === true);
+        }
+
+        const totalMemoryGb = hw?.total_memory_bytes
+            ? Math.round(hw.total_memory_bytes / (1024 ** 3))
+            : null;
+
+        return {
+            ...base,
+            hasSnapshot:       true,
+            collectedAt:       snapshot.collectedAt,
+            snapshotAge:       this.formatAge(snapshot.collectedAt),
+            healthStatus,
+            healthStatusLabel: HEALTH_LABELS[healthStatus] ?? healthStatus,
+            healthIcon:        HEALTH_ICONS[healthStatus]  ?? 'codicon-question',
+            productName:       id?.product_name ?? '',
+            gpuSummary,
+            unifiedMemory,
+            totalMemoryGb,
+        };
+    }
+
+    private formatAge(iso: string): string {
+        const ms = Date.now() - new Date(iso).getTime();
+        const mins = Math.floor(ms / 60_000);
+        if (mins < 1)   { return 'just now'; }
+        if (mins < 60)  { return `${mins}m ago`; }
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24)   { return `${hrs}h ago`; }
+        return `${Math.floor(hrs / 24)}d ago`;
+    }
+}

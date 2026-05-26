@@ -97,12 +97,14 @@ export class DeviceInfoViewController extends BaseViewController {
 
             try {
                 await this.manageabilityService.collectInventory(device);
-                await this.refresh({ deviceId: resolvedId });
             } catch (error) {
                 this.logger.error('DeviceInfoViewController: collectInventory failed', {
                     device: device.name,
                     error: error instanceof Error ? error.message : String(error),
                 });
+            } finally {
+                this.sendMessageToWebview({ type: 'inventoryComplete' });
+                await this.refresh({ deviceId: resolvedId });
             }
         }
     }

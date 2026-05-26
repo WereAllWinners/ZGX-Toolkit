@@ -7,6 +7,10 @@
     const vscode = window.vscodeApi || acquireVsCodeApi();
     window.vscodeApi = vscode;
 
+    const deviceId = document.querySelector('.container[data-device-id]')
+        ? document.querySelector('.container').getAttribute('data-device-id')
+        : undefined;
+
     // Back button — return to Admin Dashboard
     const backBtn = document.getElementById('backBtn');
     if (backBtn) {
@@ -19,7 +23,7 @@
         refreshBtn.addEventListener('click', () => {
             refreshBtn.disabled = true;
             refreshBtn.innerHTML = '<i class="codicon codicon-loading codicon-modifier-spin"></i> Refreshing…';
-            vscode.postMessage({ type: 'runInventory' });
+            vscode.postMessage({ type: 'runInventory', deviceId });
         });
     }
 
@@ -29,7 +33,21 @@
         runInventoryBtn.addEventListener('click', () => {
             runInventoryBtn.disabled = true;
             runInventoryBtn.textContent = 'Running…';
-            vscode.postMessage({ type: 'runInventory' });
+            vscode.postMessage({ type: 'runInventory', deviceId });
         });
     }
+
+    // Re-enable refresh button after inventory completes
+    window.addEventListener('message', function (event) {
+        if (event.data && event.data.type === 'inventoryComplete') {
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = '<i class="codicon codicon-refresh"></i> Refresh';
+            }
+            if (runInventoryBtn) {
+                runInventoryBtn.disabled = false;
+                runInventoryBtn.textContent = 'Run Inventory';
+            }
+        }
+    });
 }());

@@ -66,17 +66,16 @@ export class AdminDashboardViewController extends BaseViewController {
         const devices = await this.deviceService.getAllDevices();
         const allGroups = this.userGroupService.getAllGroups();
 
-        // Check collector presence in parallel for all set-up devices
-        const collectorChecks = await Promise.allSettled(
-            devices.map(d => d.isSetup
-                ? this.manageabilityService.hasCollector(d).then(has => ({ id: d.id, has }))
-                : Promise.resolve({ id: d.id, has: false })
-            )
-        );
+        // Derive collector presence from cached metadata — no SSH on every render.
+        // A device has the collector if it was explicitly flagged or has ever produced a snapshot.
         const hasCollectorMap = new Map<string, boolean>(
-            collectorChecks
-                .filter((r): r is PromiseFulfilledResult<{ id: string; has: boolean }> => r.status === 'fulfilled')
-                .map(r => [r.value.id, r.value.has])
+            devices.map(d => [
+                d.id,
+                d.isSetup && (
+                    d.metadata?.collectorInstalled === true ||
+                    d.metadata?.manageabilitySnapshot != null
+                ),
+            ])
         );
 
         // Build a map of deviceId → { group names, group IDs } for device cards + form checkboxes

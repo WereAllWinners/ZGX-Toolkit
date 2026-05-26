@@ -396,6 +396,7 @@ def cmd_firmware():
 def cmd_drivers():
     vendor  = detect_gpu_vendor()
     entries = []
+    gpu_driver_version = None
 
     # Fetch all installed packages once; glob patterns don't expand in subprocess
     # list args, so filter in Python instead.
@@ -407,24 +408,44 @@ def cmd_drivers():
             if len(p) == 2:
                 all_pkgs[p[0]] = p[1]
 
-    if vendor == "nvidia":
-        ver, ok = run(["nvidia-smi", "--query-gpu=driver_version",
-                       "--format=csv,noheader"])
-        if ok and ver:
-            entries.append({"name": "nvidia-driver", "version": ver.splitlines()[0].strip()})
-        for name, version in all_pkgs.items():
-            if any(kw in name.lower() for kw in ("nvidia", "cuda", "libnvidia")):
-                entries.append({"name": name, "version": version})
+    # Always probe both NVIDIA and AMD paths — vendor detection can miss GPUs
+    # that have the hardware present but no management tool in PATH.
 
-    elif vendor == "amd":
-        ver, ok = run(["modinfo", "amdgpu", "-F", "version"])
-        if ok and ver:
-            entries.append({"name": "amdgpu", "version": ver.strip()})
-        for name, version in all_pkgs.items():
-            if any(kw in name.lower() for kw in ("amdgpu", "rocm", "hip", "opencl-amd", "rocr")):
-                entries.append({"name": name, "version": version})
+    # ── NVIDIA ──────────────────────────────────────────────────────────────
+    nvidia_ver, nvidia_ok = run(["nvidia-smi", "--query-gpu=driver_version",
+                                 "--format=csv,noheader"])
+    if nvidia_ok and nvidia_ver:
+        gpu_driver_version = nvidia_ver.splitlines()[0].strip()
+        entries.append({"name": "nvidia-driver", "version": gpu_driver_version})
+    for name, version in all_pkgs.items():
+        if any(kw in name.lower() for kw in ("nvidia", "cuda", "libnvidia")):
+            entries.append({"name": name, "version": version})
 
-    return envelope("drivers", {"gpu_vendor": vendor, "entries": entries})
+    # ── AMD ─────────────────────────────────────────────────────────────────
+    amd_ver, amd_ok = run(["modinfo", "amdgpu", "-F", "version"])
+    if amd_ok and amd_ver:
+        amd_ver = amd_ver.strip()
+        if not gpu_driver_version:
+            gpu_driver_version = amd_ver
+        entries.append({"name": "amdgpu", "version": amd_ver})
+    for name, version in all_pkgs.items():
+        if any(kw in name.lower() for kw in ("amdgpu", "rocm", "hip", "opencl-amd", "rocr")):
+            entries.append({"name": name, "version": version})
+
+    # De-duplicate (nvidia-driver may appear both from nvidia-smi and dpkg)
+    seen = set()
+    deduped = []
+    for e in entries:
+        key = (e["name"], e["version"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(e)
+
+    return envelope("drivers", {
+        "gpu_vendor":        vendor,
+        "gpu_driver_version": gpu_driver_version,
+        "entries":           deduped,
+    })
 
 def cmd_software():
     count = 0

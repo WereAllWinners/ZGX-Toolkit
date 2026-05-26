@@ -143,7 +143,7 @@
     },
     "scripts": {
         "vscode:prepublish": "npm run compile && npm run copy-resources",
-        "compile": "tsc -p ./",
+        "compile": "tsc -p ./ && npm run copy-resources",
         "watch": "npm run copy-resources && tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src --ext ts",

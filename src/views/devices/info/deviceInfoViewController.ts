@@ -167,7 +167,7 @@ export class DeviceInfoViewController extends BaseViewController {
 
         const drivers = drv ? {
             gpu_driver_version: drv.gpu_driver_version,
-            entries: (drv.packages ?? []).slice(0, 20),
+            entries: (drv.entries ?? drv.packages ?? []).slice(0, 20),
         } : undefined;
 
         const health = hlth ? {

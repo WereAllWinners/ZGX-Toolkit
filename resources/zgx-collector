@@ -14,7 +14,15 @@ Output: JSON envelope  {"tool":..., "timestamp":..., "status":"ok", "data":{...}
 import json, subprocess, sys, os, shutil, glob
 from datetime import datetime, timezone
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
+
+# Non-interactive SSH sessions often have a stripped PATH that omits the directories
+# where NVIDIA/AMD tools live.  Prepend the common install prefixes so that
+# shutil.which() and subprocess can always locate nvidia-smi, rocm-smi, etc.
+for _p in ('/usr/local/cuda/bin', '/usr/local/bin', '/usr/local/sbin',
+           '/usr/bin', '/usr/sbin', '/bin', '/sbin', '/opt/rocm/bin'):
+    if _p not in os.environ.get('PATH', ''):
+        os.environ['PATH'] = _p + ':' + os.environ.get('PATH', '')
 
 # ---------------------------------------------------------------------------
 # Helpers

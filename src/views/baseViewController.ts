@@ -185,7 +185,7 @@ export abstract class BaseViewController implements IView {
 
         try {
             this.logger.trace('Refreshing view', { view: this.constructor.name, params });
-            this.refreshCallback(params);
+            await Promise.resolve(this.refreshCallback(params));
         } catch (error) {
             this.logger.error('Failed to refresh view', {
                 view: this.constructor.name,

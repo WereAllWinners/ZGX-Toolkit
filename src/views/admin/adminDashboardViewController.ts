@@ -148,7 +148,12 @@ export class AdminDashboardViewController extends BaseViewController {
 
         switch (msg.type) {
             case 'refreshAll':
-                await this.refresh();
+                try {
+                    await this.refresh();
+                } finally {
+                    // Re-enable the button if render failed and the DOM was never replaced.
+                    this.sendMessageToWebview({ type: 'clearLoading' });
+                }
                 break;
 
             case 'runInventory':

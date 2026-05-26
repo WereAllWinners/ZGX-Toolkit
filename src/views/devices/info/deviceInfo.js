@@ -4,7 +4,8 @@
  */
 
 (function () {
-    const vscode = acquireVsCodeApi();
+    const vscode = window.vscodeApi || acquireVsCodeApi();
+    window.vscodeApi = vscode;
 
     // Back button — return to Admin Dashboard
     const backBtn = document.getElementById('backBtn');

@@ -11,7 +11,9 @@ import { Message } from '../../types/messages';
 import { DeviceService } from '../../services/deviceService';
 import { ManageabilityService, ApplyUpdatesResult } from '../../services/manageabilityService';
 import { UserGroupService } from '../../services/userGroupService';
+import { AnsibleService } from '../../services/ansibleService';
 import { ManageabilitySnapshot } from '../../types/manageability';
+import { GroupPolicy } from '../../types/userGroup';
 import { DeviceInfoViewController } from '../devices/info/deviceInfoViewController';
 
 const HEALTH_ICONS: Record<string, string> = {
@@ -34,6 +36,7 @@ export class AdminDashboardViewController extends BaseViewController {
     private deviceService: DeviceService;
     private manageabilityService: ManageabilityService;
     private userGroupService: UserGroupService;
+    private ansibleService: AnsibleService;
     private outputChannel: vscode.OutputChannel | undefined;
 
     public static viewId(): string {
@@ -46,11 +49,13 @@ export class AdminDashboardViewController extends BaseViewController {
         deviceService: DeviceService;
         manageabilityService: ManageabilityService;
         userGroupService: UserGroupService;
+        ansibleService?: AnsibleService;
     }) {
         super(deps.logger, deps.telemetry);
         this.deviceService = deps.deviceService;
         this.manageabilityService = deps.manageabilityService;
         this.userGroupService = deps.userGroupService;
+        this.ansibleService = deps.ansibleService ?? new AnsibleService();
 
         this.template     = this.loadTemplate('./adminDashboard.html', __dirname);
         this.styles       = this.loadTemplate('./adminDashboard.css',  __dirname);
@@ -100,14 +105,28 @@ export class AdminDashboardViewController extends BaseViewController {
 
         // Build group template data
         const deviceNameMap = new Map(devices.map(d => [d.id, d.name]));
-        const userGroups = allGroups.map(g => ({
-            id:           g.id,
-            name:         g.name,
-            description:  g.description,
-            deviceCount:  g.deviceIds.length,
-            singleDevice: g.deviceIds.length === 1,
-            deviceNames:  g.deviceIds.map(id => deviceNameMap.get(id) ?? id),
-        }));
+        const userGroups = allGroups.map(g => {
+            const p = g.policy;
+            const hasPolicy = !!(
+                p && (
+                    (p.requiredPackages?.length ?? 0) > 0 ||
+                    (p.pinnedPackages?.length  ?? 0) > 0 ||
+                    p.customPlaybookPath
+                )
+            );
+            return {
+                id:                   g.id,
+                name:                 g.name,
+                description:          g.description,
+                deviceCount:          g.deviceIds.length,
+                singleDevice:         g.deviceIds.length === 1,
+                deviceNames:          g.deviceIds.map(id => deviceNameMap.get(id) ?? id),
+                hasPolicy,
+                policyRequired:       p?.requiredPackages?.join(', ') ?? '',
+                policyPinned:         p?.pinnedPackages?.join(', ')   ?? '',
+                policyPlaybook:       p?.customPlaybookPath            ?? '',
+            };
+        });
 
         const body = this.renderTemplate(this.template, {
             devices:       cardData,
@@ -146,11 +165,11 @@ export class AdminDashboardViewController extends BaseViewController {
                 break;
 
             case 'createGroup':
-                await this.handleCreateGroup(msg.name, msg.description, msg.deviceIds);
+                await this.handleCreateGroup(msg.name, msg.description, msg.deviceIds, msg.policy);
                 break;
 
             case 'updateGroup':
-                await this.handleUpdateGroup(msg.groupId, msg.name, msg.description, msg.deviceIds);
+                await this.handleUpdateGroup(msg.groupId, msg.name, msg.description, msg.deviceIds, msg.policy);
                 break;
 
             case 'deleteGroup':
@@ -169,6 +188,14 @@ export class AdminDashboardViewController extends BaseViewController {
                 await this.handleGroupApplyUpdates(msg.groupId);
                 break;
 
+            case 'groupRunPolicy':
+                await this.handleGroupRunPolicy(msg.groupId);
+                break;
+
+            case 'groupSetup':
+                await this.handleGroupSetup(msg.groupId);
+                break;
+
             case 'groupInventory':
                 await this.handleGroupInventory(msg.groupId);
                 break;
@@ -185,9 +212,15 @@ export class AdminDashboardViewController extends BaseViewController {
 
     // ── Group handlers ─────────────────────────────────────────────────────
 
-    private async handleCreateGroup(name: string, description: string, deviceIds: string[]): Promise<void> {
+    private async handleCreateGroup(name: string, description: string, deviceIds: string[], policy?: GroupPolicy): Promise<void> {
         try {
-            const group = this.userGroupService.createGroup({ name, description: description || undefined, deviceIds });
+            const normalizedPolicy = this.normalizePolicy(policy);
+            const group = this.userGroupService.createGroup({
+                name,
+                description: description || undefined,
+                deviceIds,
+                policy: normalizedPolicy,
+            });
             this.logger.info('User group created via dashboard', { id: group.id, name: group.name });
         } catch (error) {
             vscode.window.showErrorMessage(
@@ -198,9 +231,15 @@ export class AdminDashboardViewController extends BaseViewController {
         }
     }
 
-    private async handleUpdateGroup(groupId: string, name: string, description: string, deviceIds: string[]): Promise<void> {
+    private async handleUpdateGroup(groupId: string, name: string, description: string, deviceIds: string[], policy?: GroupPolicy): Promise<void> {
         try {
-            this.userGroupService.updateGroup(groupId, { name, description: description || undefined, deviceIds });
+            const normalizedPolicy = this.normalizePolicy(policy);
+            this.userGroupService.updateGroup(groupId, {
+                name,
+                description: description || undefined,
+                deviceIds,
+                policy: normalizedPolicy,
+            });
         } catch (error) {
             vscode.window.showErrorMessage(
                 `ZGX Toolkit: Failed to update group — ${error instanceof Error ? error.message : String(error)}`
@@ -230,30 +269,37 @@ export class AdminDashboardViewController extends BaseViewController {
         if (!device) { return; }
 
         try {
-            const result = await vscode.window.withProgress(
-                {
-                    location: vscode.ProgressLocation.Notification,
-                    title: `ZGX Toolkit: Installing collector on ${device.name}…`,
-                    cancellable: false,
-                },
+            let result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `ZGX Toolkit: Installing collector on ${device.name}…`, cancellable: false },
                 () => this.manageabilityService.installCollector(device),
             );
+
+            // Sudo password required for system-wide install — prompt and retry.
+            if (result.requiresPassword) {
+                const password = await vscode.window.showInputBox({
+                    prompt: `Enter sudo password for ${device.name} (needed to install to /usr/local/bin)`,
+                    password: true,
+                    ignoreFocusOut: true,
+                    placeHolder: 'sudo password',
+                });
+                if (password) {
+                    result = await vscode.window.withProgress(
+                        { location: vscode.ProgressLocation.Notification, title: `ZGX Toolkit: Installing collector on ${device.name}…`, cancellable: false },
+                        () => this.manageabilityService.installCollector(device, password),
+                    );
+                }
+            }
 
             if (result.success) {
                 vscode.window.showInformationMessage(
                     `ZGX Toolkit: Manageability tools installed on ${device.name}. Running initial inventory…`
                 );
-                // Kick off inventory so the card populates immediately
                 await this.manageabilityService.collectInventory(device);
             } else {
-                vscode.window.showErrorMessage(
-                    `ZGX Toolkit: Setup failed on ${device.name} — ${result.error}`
-                );
+                vscode.window.showErrorMessage(`ZGX Toolkit: Setup failed on ${device.name} — ${result.error}`);
             }
         } catch (error) {
-            vscode.window.showErrorMessage(
-                `ZGX Toolkit: Setup failed — ${error instanceof Error ? error.message : String(error)}`
-            );
+            vscode.window.showErrorMessage(`ZGX Toolkit: Setup failed — ${error instanceof Error ? error.message : String(error)}`);
             this.logger.error('Admin dashboard: setupManageability failed', { deviceId, error });
         } finally {
             this.sendMessageToWebview({ type: 'clearLoading', deviceId });
@@ -438,6 +484,106 @@ export class AdminDashboardViewController extends BaseViewController {
         }
     }
 
+    private async handleGroupRunPolicy(groupId: string): Promise<void> {
+        const group = this.userGroupService.getGroup(groupId);
+        if (!group) {
+            vscode.window.showErrorMessage('ZGX Toolkit: Group not found.');
+            return;
+        }
+
+        const policy = group.policy;
+        if (!policy || (
+            (policy.requiredPackages?.length ?? 0) === 0 &&
+            (policy.pinnedPackages?.length  ?? 0) === 0 &&
+            !policy.customPlaybookPath
+        )) {
+            vscode.window.showWarningMessage(
+                `ZGX Toolkit: No policy configured for "${group.name}". Edit the group to add required packages, pinned versions, or a custom playbook.`
+            );
+            this.postGroupMessage('clearLoading', groupId);
+            return;
+        }
+
+        const available = await this.ansibleService.isAvailable();
+        if (!available) {
+            vscode.window.showErrorMessage(
+                'ZGX Toolkit: ansible-playbook is not installed or not on PATH. Install Ansible to use group policies.'
+            );
+            this.postGroupMessage('clearLoading', groupId);
+            return;
+        }
+
+        const { devices } = await this.resolveGroup(groupId);
+        if (devices.length === 0) { return; }
+
+        const policyDesc: string[] = [];
+        if (policy.requiredPackages?.length)  { policyDesc.push(`${policy.requiredPackages.length} required package(s)`); }
+        if (policy.pinnedPackages?.length)     { policyDesc.push(`${policy.pinnedPackages.length} pinned version(s)`); }
+        if (policy.customPlaybookPath)         { policyDesc.push('custom playbook'); }
+
+        const answer = await vscode.window.showWarningMessage(
+            `Run policy (${policyDesc.join(', ')}) on ${devices.length} device${devices.length === 1 ? '' : 's'} in "${group.name}"?`,
+            { modal: true },
+            'Run Policy'
+        );
+        if (answer !== 'Run Policy') {
+            this.postGroupMessage('clearLoading', groupId);
+            return;
+        }
+
+        const channel = this.getOutputChannel();
+        channel.show(true);
+        channel.appendLine(`\n[${new Date().toISOString()}] Run policy — "${group.name}" (${devices.length} device${devices.length === 1 ? '' : 's'})`);
+        if (policy.requiredPackages?.length) { channel.appendLine(`  Required:  ${policy.requiredPackages.join(', ')}`); }
+        if (policy.pinnedPackages?.length)   { channel.appendLine(`  Pinned:    ${policy.pinnedPackages.join(', ')}`); }
+        if (policy.customPlaybookPath)        { channel.appendLine(`  Playbook:  ${policy.customPlaybookPath}`); }
+
+        try {
+            const result = await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `ZGX Toolkit: Running policy on "${group.name}"…`,
+                    cancellable: false,
+                },
+                () => this.ansibleService.runPolicy(group, devices, policy),
+            );
+
+            if (result.output) { channel.appendLine(result.output); }
+
+            if (result.success) {
+                vscode.window.showInformationMessage(
+                    `ZGX Toolkit: Policy applied to all ${devices.length} device${devices.length === 1 ? '' : 's'} in "${group.name}".`
+                );
+            } else {
+                channel.appendLine(`\nERROR: ${result.error}`);
+                vscode.window.showErrorMessage(
+                    `ZGX Toolkit: Policy run failed for "${group.name}" — ${result.error}. See output for details.`
+                );
+            }
+        } catch (error) {
+            channel.appendLine(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.error('Admin dashboard: groupRunPolicy failed', { groupId, error });
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Policy run failed — ${error instanceof Error ? error.message : String(error)}`
+            );
+        } finally {
+            this.postGroupMessage('clearLoading', groupId);
+            await this.refresh();
+        }
+    }
+
+    /** Strip empty arrays / empty strings so the stored policy stays clean. */
+    private normalizePolicy(policy?: GroupPolicy): GroupPolicy | undefined {
+        if (!policy) { return undefined; }
+        const normalized: GroupPolicy = {};
+        const req = policy.requiredPackages?.filter(Boolean);
+        const pin = policy.pinnedPackages?.filter(Boolean);
+        if (req?.length)              { normalized.requiredPackages   = req; }
+        if (pin?.length)              { normalized.pinnedPackages     = pin; }
+        if (policy.customPlaybookPath?.trim()) { normalized.customPlaybookPath = policy.customPlaybookPath.trim(); }
+        return Object.keys(normalized).length > 0 ? normalized : undefined;
+    }
+
     private handleApplyResult(result: ApplyUpdatesResult, deviceName: string): void {
         const channel = this.getOutputChannel();
         if (result.success) {
@@ -458,6 +604,120 @@ export class AdminDashboardViewController extends BaseViewController {
     }
 
     // ── Bulk group operation handlers ──────────────────────────────────────
+
+    private async handleGroupSetup(groupId: string): Promise<void> {
+        const { group, devices } = await this.resolveGroup(groupId);
+        if (!group || devices.length === 0) { return; }
+
+        // Only target devices that don't already have the collector installed
+        const collectorChecks = await Promise.allSettled(
+            devices.map(d => this.manageabilityService.hasCollector(d).then(has => ({ device: d, has })))
+        );
+        const needsSetup = collectorChecks
+            .filter((r): r is PromiseFulfilledResult<{ device: any; has: boolean }> => r.status === 'fulfilled' && !r.value.has)
+            .map(r => r.value.device);
+
+        if (needsSetup.length === 0) {
+            vscode.window.showInformationMessage(
+                `ZGX Toolkit: All devices in "${group.name}" already have manageability tools installed.`
+            );
+            this.postGroupMessage('clearLoading', groupId);
+            return;
+        }
+
+        try {
+            // First attempt — works for NOPASSWD systems
+            const firstPass = await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `ZGX Toolkit: Installing collector on ${needsSetup.length} device${needsSetup.length === 1 ? '' : 's'} in "${group.name}"…`,
+                    cancellable: false,
+                },
+                () => Promise.allSettled(
+                    needsSetup.map(d =>
+                        this.manageabilityService.installCollector(d).then(r => ({ device: d, result: r }))
+                    )
+                ),
+            );
+
+            type DeviceInstallResult = { device: any; result: import('../../services/manageabilityService').InstallCollectorResult };
+            const resultMap = new Map<string, DeviceInstallResult>();
+            const needsPassword: any[] = [];
+
+            for (const r of firstPass) {
+                if (r.status === 'fulfilled') {
+                    resultMap.set(r.value.device.id, r.value);
+                    if (r.value.result.requiresPassword) { needsPassword.push(r.value.device); }
+                }
+            }
+
+            // Prompt once if any device needs a sudo password
+            if (needsPassword.length > 0) {
+                const password = await vscode.window.showInputBox({
+                    prompt: `Enter sudo password for ${needsPassword.length === 1 ? needsPassword[0].name : `${needsPassword.length} devices in "${group.name}"`} (needed to install to /usr/local/bin)`,
+                    password: true,
+                    ignoreFocusOut: true,
+                    placeHolder: 'sudo password',
+                });
+                if (password) {
+                    const retryPass = await vscode.window.withProgress(
+                        { location: vscode.ProgressLocation.Notification, title: `ZGX Toolkit: Retrying setup with password…`, cancellable: false },
+                        () => Promise.allSettled(
+                            needsPassword.map(d =>
+                                this.manageabilityService.installCollector(d, password).then(r => ({ device: d, result: r }))
+                            )
+                        ),
+                    );
+                    for (const r of retryPass) {
+                        if (r.status === 'fulfilled') { resultMap.set(r.value.device.id, r.value); }
+                    }
+                }
+            }
+
+            const channel = this.getOutputChannel();
+            channel.show(true);
+            channel.appendLine(`\n[${new Date().toISOString()}] Setup manageability — "${group.name}" (${needsSetup.length} device${needsSetup.length === 1 ? '' : 's'})`);
+
+            let successCount = 0;
+            let failCount = 0;
+            const succeededDevices: any[] = [];
+
+            for (const { device, result } of resultMap.values()) {
+                if (result.success) {
+                    channel.appendLine(`  ${device.name}: installed`);
+                    successCount++;
+                    succeededDevices.push(device);
+                } else {
+                    channel.appendLine(`  ${device.name}: FAILED — ${result.error}`);
+                    failCount++;
+                }
+            }
+
+            // Run initial inventory on newly set-up devices
+            if (succeededDevices.length > 0) {
+                channel.appendLine(`\nRunning initial inventory on ${succeededDevices.length} device${succeededDevices.length === 1 ? '' : 's'}…`);
+                await Promise.allSettled(succeededDevices.map(d => this.manageabilityService.collectInventory(d)));
+            }
+
+            if (failCount === 0) {
+                vscode.window.showInformationMessage(
+                    `ZGX Toolkit: Manageability tools installed on all ${successCount} device${successCount === 1 ? '' : 's'} in "${group.name}".`
+                );
+            } else {
+                vscode.window.showWarningMessage(
+                    `ZGX Toolkit: ${successCount} succeeded, ${failCount} failed in "${group.name}". See output for details.`
+                );
+            }
+        } catch (error) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Group setup failed — ${error instanceof Error ? error.message : String(error)}`
+            );
+            this.logger.error('Admin dashboard: groupSetup failed', { groupId, error });
+        } finally {
+            this.postGroupMessage('clearLoading', groupId);
+            await this.refresh();
+        }
+    }
 
     private async handleGroupInventory(groupId: string): Promise<void> {
         const { group, devices } = await this.resolveGroup(groupId);

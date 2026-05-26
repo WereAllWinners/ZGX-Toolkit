@@ -61,6 +61,8 @@ export interface ApplyUpdatesResult {
 export interface InstallCollectorResult {
     success: boolean;
     error?: string;
+    /** True when the system-wide install failed only because sudo needs a password. */
+    requiresPassword?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,12 +315,12 @@ export class ManageabilityService {
      * Install or update the zgx-collector script on the device.
      *
      * Delivers the script via base64 to avoid shell-escaping issues.
-     * Requires the device to have sudo NOPASSWD for /usr/bin/tee, or falls back
-     * to installing into ~/.local/bin. PATH is explicitly set in all runTool calls
-     * so the collector is found regardless of which location was used.
+     * Tries system-wide install (/usr/local/bin via sudo) first; falls back to
+     * ~/.local/bin (no sudo required). Pass sudoPassword when the device requires
+     * a password for sudo tee — same flow as applyUpdates.
      */
-    async installCollector(device: Device): Promise<InstallCollectorResult> {
-        logger.info('Installing zgx-collector on device', { device: device.name });
+    async installCollector(device: Device, sudoPassword?: string): Promise<InstallCollectorResult> {
+        logger.info('Installing zgx-collector on device', { device: device.name, withPassword: !!sudoPassword });
 
         const scriptPath = path.join(__dirname, '..', '..', 'resources', 'zgx-collector');
         let scriptContent: string;
@@ -331,37 +333,63 @@ export class ManageabilityService {
         }
 
         const b64 = Buffer.from(scriptContent, 'utf8').toString('base64');
+        const sudoFlags = sudoPassword ? "-S -p ''" : '-n';
 
-        // Try system-wide install first, fall back to user-local
-        const commands = [
-            // System-wide (requires sudo NOPASSWD for tee)
-            `echo '${b64}' | base64 -d | sudo tee /usr/local/bin/zgx-collector > /dev/null && sudo chmod +x /usr/local/bin/zgx-collector`,
-            // User-local fallback
-            `mkdir -p ~/.local/bin && echo '${b64}' | base64 -d > ~/.local/bin/zgx-collector && chmod +x ~/.local/bin/zgx-collector`,
-        ];
+        // System-wide install (sudo tee). Tried first so the binary lands in a
+        // standard PATH location that non-interactive SSH sessions will find.
+        const systemCmd = `echo '${b64}' | base64 -d | sudo ${sudoFlags} tee /usr/local/bin/zgx-collector > /dev/null && sudo ${sudoFlags} chmod +x /usr/local/bin/zgx-collector`;
+        const systemResult = await executeSSHCommand(device, systemCmd, MANAGEABILITY_CONN_OPTS, {
+            operationName: 'manageability:installCollector:system',
+            timeoutSeconds: 60,
+            ...(sudoPassword ? { sudoPassword } : {}),
+        });
 
-        for (const cmd of commands) {
-            const result = await executeSSHCommand(device, cmd, MANAGEABILITY_CONN_OPTS, {
-                operationName: 'manageability:installCollector',
-                timeoutSeconds: 60,
-            });
-            if (result.success) {
-                logger.info('zgx-collector installed successfully', { device: device.name });
-                // Cache so future hasCollector() calls skip the SSH round-trip.
-                await deviceService.updateDevice(device.id, {
-                    metadata: { ...device.metadata, collectorInstalled: true },
+        if (!systemResult.success) {
+            const combined = (systemResult.stdout ?? '') + ' ' + (systemResult.stderr ?? '');
+            // sudo needs a password and we haven't supplied one yet — caller should prompt.
+            if (!sudoPassword && combined.includes('sudo:') && combined.includes('password')) {
+                logger.info('installCollector: sudo password required for system install', { device: device.name });
+                // Fall through to user-local install rather than blocking immediately.
+            } else {
+                logger.warn('installCollector: system-wide install failed, trying ~/.local/bin', {
+                    device: device.name, stderr: systemResult.stderr,
                 });
-                return { success: true };
             }
-            logger.warn('installCollector: command failed, trying fallback', {
-                device: device.name, error: result.stderr
+        } else {
+            logger.info('zgx-collector installed system-wide', { device: device.name });
+            await deviceService.updateDevice(device.id, {
+                metadata: { ...device.metadata, collectorInstalled: true },
             });
+            return { success: true };
+        }
+
+        // User-local fallback — no sudo needed, works on any writable home directory.
+        const userCmd = `mkdir -p ~/.local/bin && echo '${b64}' | base64 -d > ~/.local/bin/zgx-collector && chmod +x ~/.local/bin/zgx-collector`;
+        const userResult = await executeSSHCommand(device, userCmd, MANAGEABILITY_CONN_OPTS, {
+            operationName: 'manageability:installCollector:user',
+            timeoutSeconds: 60,
+        });
+
+        if (userResult.success) {
+            logger.info('zgx-collector installed to ~/.local/bin', { device: device.name });
+            await deviceService.updateDevice(device.id, {
+                metadata: { ...device.metadata, collectorInstalled: true },
+            });
+            return { success: true };
+        }
+
+        // Both paths failed. If we never tried a password, the system install
+        // might succeed with one — signal the caller to prompt.
+        const sysOutput = (systemResult.stdout ?? '') + ' ' + (systemResult.stderr ?? '');
+        if (!sudoPassword && sysOutput.includes('sudo:') && sysOutput.includes('password')) {
+            return { success: false, requiresPassword: true, error: 'Sudo requires a password to install system-wide.' };
         }
 
         return {
             success: false,
-            error: 'Installation failed. Ensure the device has sudo NOPASSWD for /usr/bin/tee, ' +
-                   'or that ~/.local/bin is writable and in the SSH session PATH.'
+            error: `Installation failed on ${device.name}. ` +
+                   `System install: ${systemResult.stderr ?? 'failed'}. ` +
+                   `User install: ${userResult.stderr ?? 'failed'}.`,
         };
     }
 

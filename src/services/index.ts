@@ -21,3 +21,4 @@ export { ConnectXGroupService, connectxGroupService } from './connectxGroupServi
 export { DeviceHealthCheckService, deviceHealthCheckService } from './deviceHealthCheckService';
 export { ManageabilityService, manageabilityService, InstallCollectorResult } from './manageabilityService';
 export { UserGroupService, userGroupService } from './userGroupService';
+export { AnsibleService, ansibleService } from './ansibleService';

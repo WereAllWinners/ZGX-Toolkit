@@ -21,6 +21,7 @@ export class UserGroupService {
             name: params.name.trim(),
             description: params.description?.trim() || undefined,
             deviceIds: params.deviceIds ?? [],
+            policy: params.policy,
             createdAt: now,
             updatedAt: now,
         };
@@ -38,9 +39,10 @@ export class UserGroupService {
             throw new Error('Group name cannot be empty');
         }
         const patched: Partial<UserGroup> = {};
-        if (updates.name !== undefined) { patched.name = updates.name.trim(); }
+        if (updates.name !== undefined)        { patched.name = updates.name.trim(); }
         if (updates.description !== undefined) { patched.description = updates.description.trim() || undefined; }
-        if (updates.deviceIds !== undefined) { patched.deviceIds = updates.deviceIds; }
+        if (updates.deviceIds !== undefined)   { patched.deviceIds = updates.deviceIds; }
+        if (updates.policy !== undefined)      { patched.policy = updates.policy; }
         this.store.update(id, patched);
         logger.info('User group updated', { id });
         return this.store.get(id)!;

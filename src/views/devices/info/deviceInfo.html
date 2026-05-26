@@ -6,6 +6,9 @@
 <div class="container">
     <div class="header">
         <div class="header-title-row">
+            <button class="btn btn-secondary" id="backBtn" title="Back to Admin Dashboard">
+                <i class="codicon codicon-arrow-left"></i> Back
+            </button>
             <h1>{{deviceName}}</h1>
             {{#if hasSnapshot}}
             <button class="btn btn-secondary refresh-btn" id="refreshBtn">
@@ -14,7 +17,7 @@
             </button>
             {{/if}}
         </div>
-        <p class="header-subtitle">{{deviceHost}}:{{devicePort}} &mdash; NVIDIA DGX Spark</p>
+        <p class="header-subtitle">{{deviceHost}}:{{devicePort}}{{#if productName}} &mdash; {{productName}}{{/if}}</p>
         {{#if hasSnapshot}}
         <p class="collected-at">Last collected: {{collectedAt}}</p>
         {{/if}}

@@ -75,6 +75,12 @@ export class DeviceInfoViewController extends BaseViewController {
         await super.handleMessage(message);
 
         const rawMessage = message as any;
+
+        if (rawMessage.type === 'goBack') {
+            await this.navigateTo('admin/dashboard', undefined, 'editor');
+            return;
+        }
+
         if (rawMessage.type === 'runInventory') {
             const resolvedId: string | undefined = rawMessage.deviceId ?? rawMessage.params?.deviceId;
 
@@ -177,8 +183,9 @@ export class DeviceInfoViewController extends BaseViewController {
 
         return {
             ...base,
-            hasSnapshot: true,
-            collectedAt: snapshot.collectedAt,
+            hasSnapshot:  true,
+            collectedAt:  snapshot.collectedAt,
+            productName:  id?.product_name ?? '',
             identity,
             osBuild,
             hardware,

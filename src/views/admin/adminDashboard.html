@@ -126,7 +126,7 @@
     {{#if hasUserGroups}}
     <div class="group-grid">
         {{#each userGroups}}
-        <div class="group-card" data-group-id="{{id}}">
+        <div class="group-card" data-group-id="{{id}}" data-policy-required="{{policyRequired}}" data-policy-pinned="{{policyPinned}}" data-policy-playbook="{{policyPlaybook}}">
             <div class="group-card-header">
                 <span class="group-card-name">{{name}}</span>
                 <div class="group-card-actions">
@@ -155,6 +155,9 @@
             </div>
             {{#if deviceCount}}
             <div class="group-card-footer">
+                <button class="btn btn-sm btn-secondary" data-action="group-setup" data-group-id="{{id}}" title="Install manageability collector on all devices in this group">
+                    <i class="codicon codicon-cloud-upload"></i> Setup All
+                </button>
                 <button class="btn btn-sm" data-action="group-inventory" data-group-id="{{id}}" title="Run inventory on all devices in this group">
                     <i class="codicon codicon-server"></i> Inventory All
                 </button>
@@ -167,6 +170,11 @@
                 <button class="btn btn-sm btn-update" data-action="group-apply-updates" data-group-id="{{id}}" title="Check for and apply updates on all devices in this group">
                     <i class="codicon codicon-arrow-up"></i> Apply Updates
                 </button>
+                {{#if hasPolicy}}
+                <button class="btn btn-sm btn-policy" data-action="group-run-policy" data-group-id="{{id}}" title="Apply the Ansible group policy to all devices in this group">
+                    <i class="codicon codicon-play"></i> Run Policy
+                </button>
+                {{/if}}
             </div>
             {{/if}}
         </div>
@@ -210,6 +218,25 @@
                     {{/unless}}
                 </div>
             </div>
+            <details class="form-section-collapsible">
+                <summary class="form-section-title"><i class="codicon codicon-settings-gear"></i> Group Policy (Ansible)</summary>
+                <p class="form-section-desc muted">Ansible-enforced policy applied when you click "Run Policy" on the group card. Requires <code>ansible-playbook</code> on this machine.</p>
+                <div class="form-field">
+                    <label for="groupFormRequiredPkgs">Required packages</label>
+                    <input type="text" id="groupFormRequiredPkgs" class="form-input" placeholder="e.g. htop, nvtop, curl" maxlength="500">
+                    <span class="form-hint muted">Comma-separated. Ensures these packages are installed on every device.</span>
+                </div>
+                <div class="form-field">
+                    <label for="groupFormPinnedPkgs">Pinned package versions</label>
+                    <input type="text" id="groupFormPinnedPkgs" class="form-input" placeholder="e.g. cuda-toolkit=12.3.2-1, libnvidia-compute=550.90.07-1" maxlength="500">
+                    <span class="form-hint muted">Comma-separated <code>name=version</code> pairs. Locks packages to specific versions.</span>
+                </div>
+                <div class="form-field">
+                    <label for="groupFormCustomPlaybook">Custom playbook path</label>
+                    <input type="text" id="groupFormCustomPlaybook" class="form-input" placeholder="e.g. /home/user/playbooks/research-lab.yml" maxlength="500">
+                    <span class="form-hint muted">Absolute path to a custom <code>.yml</code> Ansible playbook on this machine.</span>
+                </div>
+            </details>
             <div class="form-actions">
                 <button type="button" class="btn btn-secondary" id="groupFormCancelBtn">Cancel</button>
                 <button type="submit" class="btn" id="groupFormSubmitBtn">Create Group</button>

@@ -6,6 +6,12 @@
 (function () {
     const vscode = acquireVsCodeApi();
 
+    // Back button — return to Admin Dashboard
+    const backBtn = document.getElementById('backBtn');
+    if (backBtn) {
+        backBtn.addEventListener('click', () => vscode.postMessage({ type: 'goBack' }));
+    }
+
     // Refresh button — re-runs collectInventory via the view controller
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) {

@@ -47,6 +47,11 @@
                         if (!groupId) { return; }
                         vscode.postMessage({ type: 'deleteGroup', groupId });
                         break;
+                    case 'group-setup':
+                        if (!groupId) { return; }
+                        setGroupLoading(groupId, true);
+                        vscode.postMessage({ type: 'groupSetup', groupId });
+                        break;
                     case 'group-inventory':
                         if (!groupId) { return; }
                         setGroupLoading(groupId, true);
@@ -76,6 +81,11 @@
                         if (!groupId) { return; }
                         setGroupLoading(groupId, true);
                         vscode.postMessage({ type: 'groupApplyUpdates', groupId });
+                        break;
+                    case 'group-run-policy':
+                        if (!groupId) { return; }
+                        setGroupLoading(groupId, true);
+                        vscode.postMessage({ type: 'groupRunPolicy', groupId });
                         break;
                 }
             });
@@ -128,18 +138,24 @@
     // ── Group form ──────────────────────────────────────────────
 
     function openGroupForm(groupId) {
-        const overlay = document.getElementById('groupFormOverlay');
-        const title = document.getElementById('groupFormTitle');
-        const idInput = document.getElementById('groupFormId');
-        const nameInput = document.getElementById('groupFormName');
-        const descInput = document.getElementById('groupFormDesc');
-        const submitBtn = document.getElementById('groupFormSubmitBtn');
+        const overlay    = document.getElementById('groupFormOverlay');
+        const title      = document.getElementById('groupFormTitle');
+        const idInput    = document.getElementById('groupFormId');
+        const nameInput  = document.getElementById('groupFormName');
+        const descInput  = document.getElementById('groupFormDesc');
+        const reqPkgs    = document.getElementById('groupFormRequiredPkgs');
+        const pinnedPkgs = document.getElementById('groupFormPinnedPkgs');
+        const customPb   = document.getElementById('groupFormCustomPlaybook');
+        const submitBtn  = document.getElementById('groupFormSubmitBtn');
         if (!overlay || !idInput || !nameInput || !descInput) { return; }
 
         // Reset form
         idInput.value = '';
         nameInput.value = '';
         descInput.value = '';
+        if (reqPkgs)    { reqPkgs.value = ''; }
+        if (pinnedPkgs) { pinnedPkgs.value = ''; }
+        if (customPb)   { customPb.value = ''; }
         document.querySelectorAll('.device-checkbox').forEach(function (cb) {
             cb.checked = false;
         });
@@ -152,11 +168,14 @@
             idInput.value = groupId;
             if (groupName) { nameInput.value = groupName.textContent.trim(); }
             if (groupDesc) { descInput.value = groupDesc.textContent.trim(); }
+            // Policy fields stored as data attributes on the card
+            if (reqPkgs    && groupCard) { reqPkgs.value    = groupCard.getAttribute('data-policy-required')  || ''; }
+            if (pinnedPkgs && groupCard) { pinnedPkgs.value = groupCard.getAttribute('data-policy-pinned')    || ''; }
+            if (customPb   && groupCard) { customPb.value   = groupCard.getAttribute('data-policy-playbook')  || ''; }
             if (title) { title.textContent = 'Edit Group'; }
             if (submitBtn) { submitBtn.textContent = 'Save Changes'; }
 
             // Pre-check devices that belong to this group
-            // Device IDs are embedded as data attributes on checkbox labels
             document.querySelectorAll('.device-checkbox').forEach(function (cb) {
                 const groupIds = (cb.getAttribute('data-group-ids') || '').split(',');
                 if (groupIds.includes(groupId)) { cb.checked = true; }
@@ -176,9 +195,12 @@
     }
 
     function submitGroupForm() {
-        const idInput = document.getElementById('groupFormId');
-        const nameInput = document.getElementById('groupFormName');
-        const descInput = document.getElementById('groupFormDesc');
+        const idInput    = document.getElementById('groupFormId');
+        const nameInput  = document.getElementById('groupFormName');
+        const descInput  = document.getElementById('groupFormDesc');
+        const reqPkgs    = document.getElementById('groupFormRequiredPkgs');
+        const pinnedPkgs = document.getElementById('groupFormPinnedPkgs');
+        const customPb   = document.getElementById('groupFormCustomPlaybook');
         if (!idInput || !nameInput) { return; }
 
         const name = nameInput.value.trim();
@@ -192,11 +214,21 @@
             deviceIds.push(cb.value);
         });
 
+        // Parse policy fields
+        function splitCsv(val) {
+            return (val || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        }
+        const policy = {
+            requiredPackages: splitCsv(reqPkgs && reqPkgs.value),
+            pinnedPackages:   splitCsv(pinnedPkgs && pinnedPkgs.value),
+            customPlaybookPath: (customPb && customPb.value.trim()) || '',
+        };
+
         const groupId = idInput.value;
         if (groupId) {
-            vscode.postMessage({ type: 'updateGroup', groupId, name, description: descInput.value.trim(), deviceIds });
+            vscode.postMessage({ type: 'updateGroup', groupId, name, description: descInput.value.trim(), deviceIds, policy });
         } else {
-            vscode.postMessage({ type: 'createGroup', name, description: descInput.value.trim(), deviceIds });
+            vscode.postMessage({ type: 'createGroup', name, description: descInput.value.trim(), deviceIds, policy });
         }
         closeGroupForm();
     }

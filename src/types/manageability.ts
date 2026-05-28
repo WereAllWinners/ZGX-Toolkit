@@ -133,14 +133,19 @@ export interface DiagHealthResult {
 export interface PendingUpdate {
     name: string;
     version: string;
-    type: 'apt' | 'firmware';
+    type: 'apt' | 'firmware' | 'hp_firmware' | 'hp_driver';
+    /** Set to 'hp_flash_tool' when entry comes from hpflash/hp-flash binary detection. */
+    source?: string;
 }
 
 export interface UpdatePosture {
     status: string;
     pending_updates: PendingUpdate[];
+    hp_count?: number;
     apt_count?: number;
     firmware_count?: number;
+    /** True when the HP Software Delivery Repository is configured in apt sources. */
+    hp_repo_present?: boolean;
 }
 
 // ---------------------------------------------------------------------------

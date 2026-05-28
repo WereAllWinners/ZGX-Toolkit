@@ -946,16 +946,29 @@ export class AdminDashboardViewController extends BaseViewController {
                 return;
             }
 
-            const { status, pending_updates, apt_count, firmware_count } = result.envelope.data;
+            const { status, pending_updates, hp_count, apt_count, firmware_count, hp_repo_present } = result.envelope.data;
             channel.appendLine(`Status: ${status}`);
+            if (hp_repo_present !== undefined) {
+                channel.appendLine(`HP SDR: ${hp_repo_present ? 'configured' : 'not configured'}`);
+            }
 
             if (pending_updates.length === 0) {
                 channel.appendLine('All packages and firmware are up to date.');
                 vscode.window.showInformationMessage(`ZGX Toolkit: ${device.name} is up to date`);
             } else {
-                const aptUpdates = pending_updates.filter(u => u.type === 'apt');
-                const fwUpdates  = pending_updates.filter(u => u.type === 'firmware');
+                const hpFwUpdates  = pending_updates.filter(u => u.type === 'hp_firmware');
+                const hpDrvUpdates = pending_updates.filter(u => u.type === 'hp_driver');
+                const aptUpdates   = pending_updates.filter(u => u.type === 'apt');
+                const fwUpdates    = pending_updates.filter(u => u.type === 'firmware');
 
+                if (hpFwUpdates.length > 0) {
+                    channel.appendLine(`\nHP Firmware (${hpFwUpdates.length}):`);
+                    for (const u of hpFwUpdates) { channel.appendLine(`  ${u.name}  →  ${u.version}`); }
+                }
+                if (hpDrvUpdates.length > 0) {
+                    channel.appendLine(`\nHP Drivers (${hpDrvUpdates.length}):`);
+                    for (const u of hpDrvUpdates) { channel.appendLine(`  ${u.name}  →  ${u.version}`); }
+                }
                 if (aptUpdates.length > 0) {
                     channel.appendLine(`\nApt packages (${aptUpdates.length}):`);
                     for (const u of aptUpdates) { channel.appendLine(`  ${u.name}  →  ${u.version}`); }
@@ -966,8 +979,11 @@ export class AdminDashboardViewController extends BaseViewController {
                 }
 
                 const parts: string[] = [];
-                if ((apt_count ?? aptUpdates.length) > 0)      { parts.push(`${apt_count ?? aptUpdates.length} apt`); }
-                if ((firmware_count ?? fwUpdates.length) > 0)  { parts.push(`${firmware_count ?? fwUpdates.length} firmware`); }
+                if ((hp_count ?? (hpFwUpdates.length + hpDrvUpdates.length)) > 0) {
+                    parts.push(`${hp_count ?? (hpFwUpdates.length + hpDrvUpdates.length)} HP`);
+                }
+                if ((apt_count ?? aptUpdates.length) > 0)     { parts.push(`${apt_count ?? aptUpdates.length} apt`); }
+                if ((firmware_count ?? fwUpdates.length) > 0) { parts.push(`${firmware_count ?? fwUpdates.length} firmware`); }
                 vscode.window.showWarningMessage(
                     `${device.name}: ${parts.join(', ')} update(s) available`,
                 );

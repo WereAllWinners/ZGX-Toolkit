@@ -14,7 +14,7 @@ Output: JSON envelope  {"tool":..., "timestamp":..., "status":"ok", "data":{...}
 import json, subprocess, sys, os, shutil, glob
 from datetime import datetime, timezone
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 # Non-interactive SSH sessions often have a stripped PATH that omits the directories
 # where NVIDIA/AMD tools live.  Prepend the common install prefixes so that
@@ -526,21 +526,81 @@ def cmd_health():
         "gpus":           gpus,
     })
 
+# Package name prefixes that identify HP/HPE software packages.
+_HP_PKG_PREFIXES = ("hp-", "hpe-", "hplib", "hpsmh", "hpssacli", "hponcfg", "hpwmi")
+# Keywords that distinguish HP firmware/BIOS packages from driver/tool packages.
+_HP_FW_KEYWORDS  = ("firmware", "bios", "flash", "uefi", "microcode")
+
+def _hp_apt_updates(upgradable):
+    """Return HP-prefixed entries from the already-fetched upgradable list."""
+    hp = []
+    for e in upgradable:
+        name = e["name"].lower()
+        if any(name.startswith(p) for p in _HP_PKG_PREFIXES):
+            is_fw = any(kw in name for kw in _HP_FW_KEYWORDS)
+            hp.append({
+                "name":    e["name"],
+                "version": e["version"],
+                "type":    "hp_firmware" if is_fw else "hp_driver",
+            })
+    return hp
+
+def _hp_flash_check():
+    """Detect the HP BIOS flash utility (hpflash / hp-flash) and report its version."""
+    for tool in ("hpflash", "hp-flash"):
+        exe = shutil.which(tool)
+        if not exe:
+            continue
+        ver_out, ver_ok = run([exe, "--version"], timeout=5)
+        if not ver_ok or not ver_out:
+            ver_out, ver_ok = run([exe, "-v"], timeout=5)
+        version = ver_out.strip().splitlines()[0] if (ver_ok and ver_out) else "present"
+        return [{
+            "name":    tool,
+            "version": version,
+            "type":    "hp_firmware",
+            "source":  "hp_flash_tool",
+        }]
+    return []
+
+def _hp_repo_configured():
+    """Return True if the HP Software Delivery Repository is in apt sources."""
+    candidates = (glob.glob("/etc/apt/sources.list.d/*.list") +
+                  glob.glob("/etc/apt/sources.list.d/*.sources") +
+                  ["/etc/apt/sources.list"])
+    for f in candidates:
+        try:
+            with open(f) as fh:
+                content = fh.read()
+                if "hp.com" in content or "hpe.com" in content:
+                    return True
+        except OSError:
+            pass
+    return False
+
 def cmd_updates():
-    # ── apt packages ──────────────────────────────────────────────────────────
-    out, ok = run(["apt", "list", "--upgradable"], timeout=60)
-    apt_updates = []
-    if ok:
-        for line in out.splitlines():
+    # ── fetch upgradable packages once ────────────────────────────────────────
+    up_out, up_ok = run(["apt", "list", "--upgradable"], timeout=60)
+    upgradable = []
+    if up_ok:
+        for line in up_out.splitlines():
             if "/" not in line or line.startswith("Listing"): continue
             parts = line.split()
-            apt_updates.append({
-                "name":    parts[0].split("/")[0],
-                "version": parts[1] if len(parts) > 1 else "",
-                "type":    "apt",
-            })
+            upgradable.append({"name": parts[0].split("/")[0],
+                                "version": parts[1] if len(parts) > 1 else ""})
 
-    # ── firmware via fwupd ────────────────────────────────────────────────────
+    # ── 1. HP-specific drivers and firmware (checked before generic fwupdmgr) ─
+    hp_updates   = _hp_apt_updates(upgradable) + _hp_flash_check()
+    hp_names     = {e["name"] for e in hp_updates}
+
+    # ── 2. general apt packages (HP packages already captured above) ──────────
+    apt_updates = [
+        {"name": e["name"], "version": e["version"], "type": "apt"}
+        for e in upgradable
+        if e["name"] not in hp_names
+    ]
+
+    # ── 3. firmware via fwupdmgr ──────────────────────────────────────────────
     # fwupdmgr exits 2 when nothing to update — always try to parse output.
     fw_updates = []
     if shutil.which("fwupdmgr"):
@@ -559,12 +619,14 @@ def cmd_updates():
             except Exception:
                 pass
 
-    all_updates = apt_updates + fw_updates
+    all_updates = hp_updates + apt_updates + fw_updates
     return envelope("updates", {
-        "status":          "updates_available" if all_updates else "up_to_date",
-        "pending_updates": all_updates,
-        "apt_count":       len(apt_updates),
-        "firmware_count":  len(fw_updates),
+        "status":           "updates_available" if all_updates else "up_to_date",
+        "pending_updates":  all_updates,
+        "hp_count":         len(hp_updates),
+        "apt_count":        len(apt_updates),
+        "firmware_count":   len(fw_updates),
+        "hp_repo_present":  _hp_repo_configured(),
     })
 
 # ---------------------------------------------------------------------------

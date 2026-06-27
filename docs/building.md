@@ -41,8 +41,8 @@ The following will be installed automatically via npm:
 ### 1. Clone the Repository
 
 ```powershell
-git clone https://github.com/hpi-main/solution-zgx-vscode-extension.git
-cd solution-zgx-vscode-extension
+git clone https://github.com/WereAllWinners/ZGX-Toolkit.git
+cd ZGX-Toolkit
 ```
 
 ### 2. Install Dependencies

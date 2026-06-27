@@ -12,14 +12,76 @@ Second, the toolkit includes lightweight IP discovery functionality that automat
 
 ![HP ZGX Toolkit Diagram](/docs/marketplace/images/zgx-tk-extension-diagram.png)
 
-## Quick Start 
+## Enterprise Manageability Engine
 
-1. Install the HP ZGX Toolkit extension from the VS Code Marketplace 
-2. Go to the Device Manager and run the ZGX discovery command to locate your device on the network 
-3. Connect to your ZGX via the extension's SSH integration and have the Toolkit create SSH keys for you. 
-4. Select and install desired components from the curated AI stack (Python packages, Ollama, curl, nvtop, Gradio, Streamlit, MiniForge, MLFlow Server and more.)    
+This fork extends the upstream ZGX Toolkit with a full enterprise device
+lifecycle management layer, built on the
+[NVIDIA DGX Spark Manageability Guide](https://developer.nvidia.com/dgx-spark)
+specification.
 
-## Setup 
+### Capabilities
+
+**Device Inventory** — Hardware configuration (GPU, CPU, memory, storage,
+NIC), firmware versions, OS build identity, driver inventory, and software
+inventory collected via SSH and surfaced directly in VS Code.
+
+**Health Monitoring** — Continuous health posture signals from
+`spark_diagctl`, including GPU status, driver health, and system diagnostics,
+with visual alerts in the Device Manager panel.
+
+**Diagnostics** — On-demand and scheduled diagnostics artifact collection
+supporting L1 (health posture) and L2 (evidence bundle) modes per the NVIDIA
+manageability spec.
+
+**Ansible Group Policy** — Detect configuration drift against known-good
+baselines and generate Ansible remediation playbooks, all from within VS Code.
+
+### Architecture
+
+The manageability layer is **agentless** — it uses the same SSH
+infrastructure already in the ZGX Toolkit. No software is installed on target
+devices beyond lightweight Python collector scripts placed in
+`DGX_spark_management/bin/`. Collectors are read-only and safe to run
+frequently. Controllers that modify device state always require explicit user
+confirmation and are never run automatically.
+
+For full setup and usage, see [Manageability Guide](docs/manageability.md).
+
+### New VS Code commands
+
+| Command | Description |
+|---|---|
+| `ZGX Toolkit: Show Device Info` | Open the Device Info panel |
+| `ZGX Toolkit: Run Health Check` | On-demand health check |
+| `ZGX Toolkit: Collect Device Inventory` | Full inventory collection |
+| `ZGX Toolkit: Check for Updates` | Firmware/driver update posture |
+| `ZGX Toolkit: Check Ansible Policy Drift` | Compare against Ansible baseline |
+
+## Quick Start
+
+### Installing from GitHub (recommended)
+
+1. Go to the [Releases page](https://github.com/WereAllWinners/ZGX-Toolkit/releases)
+   and download the latest `.vsix` file.
+2. In VS Code, open the Extensions view (`Ctrl+Shift+X`).
+3. Click the `···` menu → **Install from VSIX…** and select the downloaded file.
+
+Or install directly from a terminal:
+
+```bash
+code --install-extension zgx-toolkit-2.0.0.vsix
+```
+
+### After installing
+
+1. Go to the ZGX Toolkit panel in the Activity Bar.
+2. Run the device discovery command to locate your ZGX device on the network.
+3. Connect via SSH — the Toolkit will help generate and configure SSH keys.
+4. Select and install AI stack components from the curated app catalog.
+5. Open the **Device Info** panel to view inventory, health status, and
+   firmware details for any connected device.
+
+## Setup
 
 See ZGX Onboarding Guide @ https://www.hp.com/zgx-onboard
 
@@ -28,13 +90,15 @@ See ZGX Onboarding Guide @ https://www.hp.com/zgx-onboard
 * HP ZGX is located on same subnet of local network
 * VS Code Remote SSH extension is installed on your primary device (non-ZGX device) 
 
-### Installation Steps: 
+### Installation Steps:
 
-1. Open VS Code Extension menu
-2. Search for "HP ZGX Toolkit"
-3. Select "Install" and follow setup instructions
+Download the `.vsix` from the
+[Releases page](https://github.com/WereAllWinners/ZGX-Toolkit/releases), then:
 
-Alternatively, you can install the extension directly from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=HPInc.zgx-toolkit)
+1. In VS Code, open the Extensions view (`Ctrl+Shift+X`).
+2. Click the `···` menu → **Install from VSIX…** and select the downloaded file.
+
+Or from the terminal: `code --install-extension zgx-toolkit-2.0.0.vsix`
 
 ### Supported OS on client device, i.e., not the ZGX 
 
@@ -42,9 +106,14 @@ Alternatively, you can install the extension directly from the [VS Code Marketpl
 * Ubuntu 24.04 
 * MacOS 15 
 
-## Questions, issues, feature requests, and contributions 
+## Questions, issues, and contributions
 
-For help with issues or to submit a feature request please visit the open-source Github repository at https://github.com/HPInc/ZGX-Toolkit
+For help or to submit a feature request, open an issue on the
+[GitHub repository](https://github.com/WereAllWinners/ZGX-Toolkit/issues).
+
+This is a community fork of the HP ZGX Toolkit. The original upstream project
+is maintained by HP Inc at
+[github.com/HPInc/ZGX-Toolkit](https://github.com/HPInc/ZGX-Toolkit).
 
 ## Data and Telemetry 
 

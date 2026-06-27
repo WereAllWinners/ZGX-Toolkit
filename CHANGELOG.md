@@ -1,3 +1,66 @@
+# Changelog
+
+## v2.0.0 (2026-06-27)
+
+### Enterprise Manageability Engine — new in this fork
+
+This release adds a complete enterprise device lifecycle management layer
+on top of the upstream HP ZGX Toolkit. All existing functionality is
+unchanged and backward-compatible.
+
+#### New capabilities
+
+- **Device Inventory** (`src/types/manageability.ts`,
+  `src/services/manageabilityService.ts`): TypeScript service layer for
+  collecting hardware, firmware, OS, driver, and software inventory from
+  ZGX devices via SSH, following the NVIDIA DGX Spark Manageability Guide
+  JSON envelope spec.
+
+- **Health Monitoring**: Continuous device health posture via
+  `spark_diagctl` integration, surfaced in the Device Manager.
+
+- **Device Info Webview Panel**: Live hardware configuration, OS identity,
+  GPU status, and firmware versions per device.
+
+- **Ansible Group Policy**: Configuration drift detection and Ansible
+  remediation playbook generation for fleet baseline enforcement.
+
+- **Python Collector Scripts** (`DGX_spark_management/bin/`): Agentless,
+  stdlib-only Python collectors implementing the NVIDIA manageability tool
+  suite: `device_identity.py`, `hardware_config.py`, `firmware_reporter.py`,
+  `os_build_identity.py`, `driver_inventory_reporter.py`,
+  `software_inventory_reporter.py`.
+
+#### New VS Code commands
+
+- `ZGX Toolkit: Show Device Info`
+- `ZGX Toolkit: Run Health Check`
+- `ZGX Toolkit: Collect Device Inventory`
+- `ZGX Toolkit: Check for Updates`
+- `ZGX Toolkit: Check Ansible Policy Drift`
+
+#### Test coverage
+
+Added 11 unit tests for the manageability service layer.
+Total: 1091 passing.
+
+#### Installation
+
+Download the `.vsix` from the
+[Releases page](https://github.com/WereAllWinners/ZGX-Toolkit/releases)
+and install with:
+
+```bash
+code --install-extension zgx-toolkit-2.0.0.vsix
+```
+
+#### Fork attribution
+
+Maintained by Jerome Gabryszewski. Original ZGX Toolkit by HP Inc at
+https://github.com/HPInc/ZGX-Toolkit — licensed under the X11 License.
+
+---
+
 # Version v1.21.3 → v1.21.5 (May 2026)
 
 ## What's New

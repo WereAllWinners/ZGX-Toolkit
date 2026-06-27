@@ -37,6 +37,11 @@ export const COMMANDS = {
     CHECK_UPDATES: 'zgxToolkit.checkUpdates',
     /** Open the Device Info panel for a DGX Spark device */
     SHOW_DEVICE_INFO: 'zgxToolkit.showDeviceInfo',
+    // Manageability commands (Phase 2)
+    RUN_HEALTH_CHECK:    'zgxToolkit.runHealthCheck',
+    COLLECT_INVENTORY:   'zgxToolkit.collectDeviceInventory',
+    CHECK_FOR_UPDATES:   'zgxToolkit.checkForUpdates',
+    CHECK_ANSIBLE_DRIFT: 'zgxToolkit.checkAnsiblePolicyDrift',
 } as const;
 
 /**

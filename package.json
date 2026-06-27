@@ -1,9 +1,9 @@
 {
     "name": "zgx-toolkit",
     "displayName": "ZGX Toolkit",
-    "description": "Manage your SSH connections to remote HP ZGX devices",
-    "version": "0.0.0",
-    "publisher": "HPInc",
+    "description": "Manage HP ZGX/DGX Spark devices with SSH, device inventory, health monitoring, diagnostics, and Ansible policy enforcement.",
+    "version": "2.0.0",
+    "publisher": "WereAllWinners",
     "icon": "resources/logo-marketplace.png",
     "galleryBanner": {
         "color": "#1F49D1",
@@ -11,12 +11,12 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/HPInc/ZGX-Toolkit"
+        "url": "https://github.com/WereAllWinners/ZGX-Toolkit"
     },
     "bugs": {
-        "url": "https://github.com/HPInc/ZGX-Toolkit/issues"
+        "url": "https://github.com/WereAllWinners/ZGX-Toolkit/issues"
     },
-    "homepage": "https://github.com/HPInc/ZGX-Toolkit#readme",
+    "homepage": "https://github.com/WereAllWinners/ZGX-Toolkit#readme",
     "license": "SEE LICENSE IN LICENSE",
     "engines": {
         "vscode": "^1.74.0"
@@ -30,12 +30,20 @@
         "remote",
         "zgx",
         "hp",
+        "dgx",
+        "nvidia",
         "device-management",
         "remote-ssh",
         "connection-manager",
         "remote-development",
         "device-discovery",
-        "hp-zgx"
+        "hp-zgx",
+        "manageability",
+        "enterprise",
+        "ansible",
+        "fleet-management",
+        "health-monitoring",
+        "device-inventory"
     ],
     "qna": "marketplace",
     "activationEvents": [],
@@ -116,6 +124,26 @@
             {
                 "command": "zgxToolkit.showDeviceInfo",
                 "title": "ZGX Toolkit: Show Device Info"
+            },
+            {
+                "command": "zgxToolkit.runHealthCheck",
+                "title": "ZGX Toolkit: Run Health Check",
+                "icon": "$(pulse)"
+            },
+            {
+                "command": "zgxToolkit.collectDeviceInventory",
+                "title": "ZGX Toolkit: Collect Device Inventory",
+                "icon": "$(list-tree)"
+            },
+            {
+                "command": "zgxToolkit.checkForUpdates",
+                "title": "ZGX Toolkit: Check for Updates",
+                "icon": "$(cloud-download)"
+            },
+            {
+                "command": "zgxToolkit.checkAnsiblePolicyDrift",
+                "title": "ZGX Toolkit: Check Ansible Policy Drift",
+                "icon": "$(diff)"
             }
         ],
         "configuration": {
@@ -137,6 +165,28 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Enable telemetry for the ZGX Toolkit extension. This setting is enabled by default; set it to false to opt out. Telemetry is collected only when both this setting and VS Code's global telemetry setting allow it. Telemetry data helps improve the extension by providing insights into usage patterns and potential issues. No personal or sensitive data is collected."
+                },
+                "zgxToolkit.manageability.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable the Manageability Engine for device inventory, health monitoring, and policy enforcement."
+                },
+                "zgxToolkit.manageability.healthPollIntervalMinutes": {
+                    "type": "number",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 60,
+                    "description": "How often (in minutes) to poll device health status."
+                },
+                "zgxToolkit.manageability.collectorPath": {
+                    "type": "string",
+                    "default": "/usr/local/lib/DGX_spark_management/bin",
+                    "description": "Path to the DGX_spark_management collector scripts on target devices."
+                },
+                "zgxToolkit.manageability.ansibleInventoryPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to the Ansible inventory file for policy drift detection."
                 }
             }
         }

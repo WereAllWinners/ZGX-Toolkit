@@ -314,6 +314,35 @@ async function showDeviceInfoCommand(commandProvider: ZgxToolkitProvider): Promi
 }
 
 // ---------------------------------------------------------------------------
+// Internal programmatic command (Phase 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Open the Device Info panel directly from a deviceId argument.
+ * Unlike showDeviceInfoCommand this skips the picker and is suitable for
+ * programmatic callers (webviews, other commands, tests).
+ */
+async function openDeviceInfoPanelCommand(commandProvider: ZgxToolkitProvider, deviceId?: string): Promise<void> {
+    logger.debug('openDeviceInfoPanel command invoked', { deviceId });
+
+    if (!deviceId) {
+        logger.warn('openDeviceInfoPanel called without deviceId — falling back to picker');
+        await showDeviceInfoCommand(commandProvider);
+        return;
+    }
+
+    try {
+        await commandProvider.openInEditor('devices/info', { deviceId });
+        logger.info('Opened device info panel via programmatic command', { deviceId });
+    } catch (error) {
+        logger.error('Failed to open device info panel', { error });
+        vscode.window.showErrorMessage(
+            `ZGX Toolkit: Could not open device info — ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2 handlers
 // ---------------------------------------------------------------------------
 
@@ -549,5 +578,8 @@ export function registerManageabilityCommands(
         vscode.commands.registerCommand(COMMANDS.COLLECT_INVENTORY,   () => collectInventoryCommand(zgxProvider)),
         vscode.commands.registerCommand(COMMANDS.CHECK_FOR_UPDATES,   checkForUpdatesCommand),
         vscode.commands.registerCommand(COMMANDS.CHECK_ANSIBLE_DRIFT, checkAnsibleDriftCommand),
+        // Phase 3 internal command (programmatic — not in contributes.commands)
+        vscode.commands.registerCommand(COMMANDS.OPEN_DEVICE_INFO_PANEL, (deviceId?: string) =>
+            openDeviceInfoPanelCommand(zgxProvider, deviceId)),
     );
 }

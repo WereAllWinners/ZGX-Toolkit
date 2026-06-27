@@ -47,7 +47,7 @@ Total: 1091 passing.
 #### Installation
 
 Download the `.vsix` from the
-[Releases page](https://github.com/WereAllWinners/ZGX-Toolkit/releases)
+[Releases page](https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine/releases)
 and install with:
 
 ```bash

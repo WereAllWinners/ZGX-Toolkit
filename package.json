@@ -11,12 +11,12 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/WereAllWinners/ZGX-Toolkit"
+        "url": "https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine"
     },
     "bugs": {
-        "url": "https://github.com/WereAllWinners/ZGX-Toolkit/issues"
+        "url": "https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine/issues"
     },
-    "homepage": "https://github.com/WereAllWinners/ZGX-Toolkit#readme",
+    "homepage": "https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine#readme",
     "license": "SEE LICENSE IN LICENSE",
     "engines": {
         "vscode": "^1.74.0"

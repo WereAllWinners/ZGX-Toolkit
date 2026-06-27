@@ -61,7 +61,7 @@ For full setup and usage, see [Manageability Guide](docs/manageability.md).
 
 ### Installing from GitHub (recommended)
 
-1. Go to the [Releases page](https://github.com/WereAllWinners/ZGX-Toolkit/releases)
+1. Go to the [Releases page](https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine/releases)
    and download the latest `.vsix` file.
 2. In VS Code, open the Extensions view (`Ctrl+Shift+X`).
 3. Click the `···` menu → **Install from VSIX…** and select the downloaded file.
@@ -93,7 +93,7 @@ See ZGX Onboarding Guide @ https://www.hp.com/zgx-onboard
 ### Installation Steps:
 
 Download the `.vsix` from the
-[Releases page](https://github.com/WereAllWinners/ZGX-Toolkit/releases), then:
+[Releases page](https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine/releases), then:
 
 1. In VS Code, open the Extensions view (`Ctrl+Shift+X`).
 2. Click the `···` menu → **Install from VSIX…** and select the downloaded file.
@@ -109,7 +109,7 @@ Or from the terminal: `code --install-extension zgx-toolkit-2.0.0.vsix`
 ## Questions, issues, and contributions
 
 For help or to submit a feature request, open an issue on the
-[GitHub repository](https://github.com/WereAllWinners/ZGX-Toolkit/issues).
+[GitHub repository](https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine/issues).
 
 This is a community fork of the HP ZGX Toolkit. The original upstream project
 is maintained by HP Inc at

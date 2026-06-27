@@ -9,13 +9,13 @@ This fork maintains full compatibility with the upstream
 Manageability Engine layer. Contributions are welcome in both areas.
 
 The project is distributed via
-[GitHub Releases](https://github.com/WereAllWinners/ZGX-Toolkit/releases).
+[GitHub Releases](https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine/releases).
 There is no VS Code Marketplace listing.
 
 ## Getting started
 
 ```bash
-git clone https://github.com/WereAllWinners/ZGX-Toolkit.git
+git clone https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine.git
 cd ZGX-Toolkit
 npm install
 npm run compile
@@ -81,7 +81,7 @@ Release with the `.vsix` attached.
 ## Reporting issues
 
 Open an issue at:
-https://github.com/WereAllWinners/ZGX-Toolkit/issues
+https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine/issues
 
 Please include VS Code version, extension version, device model, DGX OS
 version, steps to reproduce, and expected vs. actual behavior.

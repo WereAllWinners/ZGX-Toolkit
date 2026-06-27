@@ -41,7 +41,7 @@ The following will be installed automatically via npm:
 ### 1. Clone the Repository
 
 ```powershell
-git clone https://github.com/WereAllWinners/ZGX-Toolkit.git
+git clone https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine.git
 cd ZGX-Toolkit
 ```
 

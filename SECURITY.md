@@ -12,7 +12,7 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Open a [private GitHub Security Advisory](https://github.com/WereAllWinners/ZGX-Toolkit/security/advisories/new)
+Open a [private GitHub Security Advisory](https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine/security/advisories/new)
 on this repository's Security tab.
 
 Include:
@@ -29,7 +29,7 @@ You will receive a response within 5 business days.
 
 This extension is distributed as a signed `.vsix` file via GitHub Releases.
 Always download from the official releases page at:
-https://github.com/WereAllWinners/ZGX-Toolkit/releases
+https://github.com/WereAllWinners/ZGX-Toolkit-Manageability-Engine/releases
 
 Verify the SHA256 checksum of the downloaded file against the value
 published in the release notes before installing.

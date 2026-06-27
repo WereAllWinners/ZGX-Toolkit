@@ -166,3 +166,126 @@
 .signal-fail { color: var(--vscode-editorError-foreground); }
 .signal-warn { color: var(--vscode-editorWarning-foreground); }
 .signal-unknown { color: var(--vscode-descriptionForeground); }
+
+/* Tab bar */
+.tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    margin-bottom: 20px;
+}
+
+.tab-btn {
+    padding: 8px 18px;
+    background: transparent;
+    color: var(--vscode-foreground);
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-family: var(--vscode-font-family);
+    opacity: 0.65;
+}
+
+.tab-btn:hover {
+    opacity: 1;
+    background: var(--vscode-list-hoverBackground);
+}
+
+.tab-btn.tab-active {
+    opacity: 1;
+    border-bottom-color: var(--vscode-focusBorder);
+}
+
+.tab-hidden { display: none; }
+
+/* Policy tab */
+.policy-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.policy-actions { display: flex; gap: 8px; }
+
+.policy-baseline-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9em;
+}
+
+.policy-hint {
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+}
+
+/* Drift result */
+.drift-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    border: 1px solid;
+}
+
+.drift-clean    { color: var(--vscode-testing-iconPassed);        border-color: var(--vscode-testing-iconPassed); }
+.drift-detected { color: var(--vscode-editorWarning-foreground);  border-color: var(--vscode-editorWarning-foreground); }
+
+.drift-export-btn { margin-left: auto; }
+
+/* Findings table */
+.findings-table {
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.findings-header {
+    display: grid;
+    grid-template-columns: 90px 1fr 1fr 1fr;
+    padding: 6px 12px;
+    font-size: 0.78em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--vscode-descriptionForeground);
+    background: var(--vscode-sideBarSectionHeader-background);
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.finding-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 1fr 1fr;
+    padding: 7px 12px;
+    font-size: 0.88em;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    align-items: start;
+}
+
+.finding-row:last-child { border-bottom: none; }
+
+.finding-severity {
+    font-weight: 600;
+    font-size: 0.8em;
+    text-transform: uppercase;
+}
+
+.severity-critical .finding-severity { color: var(--vscode-editorError-foreground); }
+.severity-warning  .finding-severity { color: var(--vscode-editorWarning-foreground); }
+.severity-info     .finding-severity { color: var(--vscode-descriptionForeground); }
+
+.finding-field,
+.finding-value {
+    word-break: break-all;
+    padding-right: 8px;
+    font-family: var(--vscode-editor-font-family);
+    font-size: 0.9em;
+}

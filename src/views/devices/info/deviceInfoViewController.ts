@@ -9,13 +9,14 @@
  * A "Refresh" button re-runs collectInventory and re-renders.
  */
 
+import * as vscode from 'vscode';
 import { BaseViewController } from '../../baseViewController';
 import { Logger } from '../../../utils/logger';
 import { ITelemetryService } from '../../../types/telemetry';
 import { Message } from '../../../types/messages';
 import { DeviceService } from '../../../services/deviceService';
 import { ManageabilityService } from '../../../services/manageabilityService';
-import { ManageabilitySnapshot } from '../../../types/manageability';
+import { ManageabilitySnapshot, DriftReport } from '../../../types/manageability';
 
 /** Health status → codicon name */
 const HEALTH_ICONS: Record<string, string> = {
@@ -28,6 +29,8 @@ const HEALTH_ICONS: Record<string, string> = {
 export class DeviceInfoViewController extends BaseViewController {
     private deviceService: DeviceService;
     private manageabilityService: ManageabilityService;
+    private currentDeviceId: string | undefined;
+    private lastDriftReport: DriftReport | undefined;
 
     public static viewId(): string {
         return 'devices/info';
@@ -64,9 +67,22 @@ export class DeviceInfoViewController extends BaseViewController {
             return this.wrapHtml('<p>Device not found.</p>', nonce);
         }
 
+        this.currentDeviceId = deviceId;
+
         const snapshot = device.metadata?.manageabilitySnapshot as ManageabilitySnapshot | undefined;
+        const baseline = await this.manageabilityService.getBaseline(device);
 
         const templateData = this.buildTemplateData(device, snapshot);
+        Object.assign(templateData, {
+            hasBaseline:        !!baseline,
+            baselineCapturedAt: baseline?.collectedAt ?? '',
+            driftReport:        this.lastDriftReport ? {
+                driftDetected: this.lastDriftReport.driftDetected,
+                summary:       this.lastDriftReport.summary,
+                findings:      this.lastDriftReport.findings,
+            } : null,
+        });
+
         const body = this.renderTemplate(this.template, templateData);
         return this.wrapHtml(body, nonce);
     }
@@ -78,6 +94,67 @@ export class DeviceInfoViewController extends BaseViewController {
 
         if (rawMessage.type === 'goBack') {
             await this.navigateTo('admin/dashboard', undefined, 'editor');
+            return;
+        }
+
+        if (rawMessage.type === 'capture-baseline') {
+            const deviceId = rawMessage.deviceId ?? this.currentDeviceId;
+            if (!deviceId) {
+                this.logger.warn('capture-baseline message missing deviceId');
+                return;
+            }
+            const device = await this.deviceService.getDevice(deviceId);
+            if (!device) {
+                this.logger.warn('DeviceInfoViewController: capture-baseline — device not found', { deviceId });
+                return;
+            }
+            try {
+                await this.manageabilityService.captureBaseline(device);
+                vscode.window.showInformationMessage(
+                    `ZGX Toolkit: Baseline captured for ${device.name}.`
+                );
+            } catch (error) {
+                vscode.window.showErrorMessage(
+                    `ZGX Toolkit: ${error instanceof Error ? error.message : String(error)}`
+                );
+            } finally {
+                await this.refresh({ deviceId });
+            }
+            return;
+        }
+
+        if (rawMessage.type === 'check-drift') {
+            const deviceId = rawMessage.deviceId ?? this.currentDeviceId;
+            if (!deviceId) {
+                this.logger.warn('check-drift message missing deviceId');
+                return;
+            }
+            const device = await this.deviceService.getDevice(deviceId);
+            if (!device) {
+                this.logger.warn('DeviceInfoViewController: check-drift — device not found', { deviceId });
+                return;
+            }
+            try {
+                const config = vscode.workspace.getConfiguration('zgxToolkit');
+                const inventoryPath = config.get<string>('manageability.ansibleInventoryPath', '');
+                const result = await this.manageabilityService.checkAnsibleDrift(device, inventoryPath);
+                this.lastDriftReport = result.report;
+            } catch (error) {
+                this.logger.error('DeviceInfoViewController: drift check failed', {
+                    device: device.name,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            } finally {
+                await this.refresh({ deviceId });
+            }
+            return;
+        }
+
+        if (rawMessage.type === 'export-remediation') {
+            if (!this.lastDriftReport) { return; }
+            const yaml = this.manageabilityService.exportRemediationPlaybook(this.lastDriftReport);
+            const doc = await vscode.workspace.openTextDocument({ content: yaml, language: 'yaml' });
+            await vscode.window.showTextDocument(doc);
             return;
         }
 

@@ -519,32 +519,21 @@ async function checkAnsibleDriftCommand(): Promise<void> {
         const device = await selectDevice('ZGX Toolkit: Check Ansible Policy Drift');
         if (!device) { return; }
 
-        await vscode.window.withProgress(
+        const result = await vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
                 title: `Checking Ansible drift: ${device.name}…`,
                 cancellable: false,
             },
-            async () => {
-                const result = await manageabilityService.getHealthPosture(device);
-
-                if (!result.success || !result.envelope) {
-                    vscode.window.showErrorMessage(
-                        `ZGX Toolkit: Drift check failed — ${result.error ?? 'No data returned'}`
-                    );
-                    return;
-                }
-
-                const driftDetected = result.envelope.data.overall_status !== 'healthy';
-                const icon = driftDetected ? '⚠️' : '✓';
-                vscode.window.showInformationMessage(
-                    `ZGX Toolkit: ${icon} ${device.name} — ` +
-                    (driftDetected ? 'Configuration drift detected' : 'No drift detected')
-                );
-            },
+            async () => manageabilityService.checkAnsibleDrift(device, inventoryPath),
         );
 
-        logger.info('Ansible drift check complete', { device: device.name });
+        const icon = result.driftDetected ? '⚠️' : '✓';
+        vscode.window.showInformationMessage(
+            `ZGX Toolkit: ${icon} ${device.name} — ${result.summary}`
+        );
+
+        logger.info('Ansible drift check complete', { device: device.name, driftDetected: result.driftDetected });
     } catch (error) {
         logger.error('Failed to check Ansible drift', { error });
         vscode.window.showErrorMessage(

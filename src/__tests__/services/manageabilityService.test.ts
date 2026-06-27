@@ -1,5 +1,5 @@
 /*
- * Copyright ©2025 HP Development Company, L.P.
+ * Copyright © 2026 Jerome Gabryszewski
  * Licensed under the X11 License. See LICENSE file in the project root for details.
  */
 

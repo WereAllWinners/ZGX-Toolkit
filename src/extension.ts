@@ -37,6 +37,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Initialize extension state service
         extensionStateService.initialize(context);
 
+        // Initialize manageability service (storage path + policy output channel)
+        manageabilityService.initialize(context);
+
         // Initialize configuration
         const logLevel = configService.getLogLevel();
         logger.setLevel(logLevel);

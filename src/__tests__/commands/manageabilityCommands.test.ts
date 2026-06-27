@@ -29,6 +29,7 @@ jest.mock('../../services', () => ({
         runTool: jest.fn(),
         hasCollector: jest.fn(),
         installCollector: jest.fn(),
+        checkAnsibleDrift: jest.fn(),
     },
 }));
 
@@ -124,6 +125,17 @@ describe('Manageability Command Handlers (Phase 2)', () => {
         (manageabilityService.getHealthPosture as jest.Mock).mockResolvedValue({
             success: true,
             envelope: mockHealthEnvelope,
+        });
+        (manageabilityService.checkAnsibleDrift as jest.Mock).mockResolvedValue({
+            driftDetected: false,
+            summary: 'ZGX-Test matches baseline',
+            report: {
+                deviceId: 'device-1', deviceName: 'ZGX-Test',
+                baselineCapturedAt: '', checkedAt: new Date().toISOString(),
+                driftDetected: false, summary: 'ZGX-Test matches baseline',
+                findings: [],
+                baseline: { collectedAt: '' }, current: { collectedAt: '' },
+            },
         });
         (manageabilityService.getUpdatePosture as jest.Mock).mockResolvedValue({
             success: true,
@@ -349,7 +361,7 @@ describe('Manageability Command Handlers (Phase 2)', () => {
             );
         });
 
-        it('proceeds to device selection when inventory path is configured', async () => {
+        it('proceeds to device selection and calls checkAnsibleDrift when inventory path is configured', async () => {
             (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
                 get: jest.fn().mockReturnValue('/etc/ansible/hosts'),
             });
@@ -359,10 +371,13 @@ describe('Manageability Command Handlers (Phase 2)', () => {
             await handler();
 
             expect(deviceService.getAllDevices).toHaveBeenCalled();
-            expect(manageabilityService.getHealthPosture).toHaveBeenCalledWith(mockDevice);
+            expect(manageabilityService.checkAnsibleDrift).toHaveBeenCalledWith(
+                mockDevice,
+                '/etc/ansible/hosts'
+            );
         });
 
-        it('shows "No drift detected" when device is healthy', async () => {
+        it('shows ✓ notification when no drift is detected', async () => {
             (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
                 get: jest.fn().mockReturnValue('/etc/ansible/hosts'),
             });
@@ -372,20 +387,25 @@ describe('Manageability Command Handlers (Phase 2)', () => {
             await handler();
 
             expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-                expect.stringContaining('No drift detected')
+                expect.stringContaining('✓')
             );
         });
 
-        it('shows "Configuration drift detected" when device is degraded', async () => {
+        it('shows ⚠️ notification when drift is detected', async () => {
             (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
                 get: jest.fn().mockReturnValue('/etc/ansible/hosts'),
             });
             (deviceService.getAllDevices as jest.Mock).mockResolvedValue([mockDevice]);
-            (manageabilityService.getHealthPosture as jest.Mock).mockResolvedValue({
-                success: true,
-                envelope: {
-                    ...mockHealthEnvelope,
-                    data: { ...mockHealthEnvelope.data, overall_status: 'degraded' },
+            (manageabilityService.checkAnsibleDrift as jest.Mock).mockResolvedValue({
+                driftDetected: true,
+                summary: '1 finding(s): 1 critical, 0 warning, 0 info',
+                report: {
+                    deviceId: 'device-1', deviceName: 'ZGX-Test',
+                    baselineCapturedAt: '', checkedAt: new Date().toISOString(),
+                    driftDetected: true,
+                    summary: '1 finding(s): 1 critical, 0 warning, 0 info',
+                    findings: [{ category: 'driver', field: 'drivers.gpuDriverVersion', baselineValue: '580.142', currentValue: '590.00', severity: 'critical' }],
+                    baseline: { collectedAt: '' }, current: { collectedAt: '' },
                 },
             });
 
@@ -393,7 +413,7 @@ describe('Manageability Command Handlers (Phase 2)', () => {
             await handler();
 
             expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-                expect.stringContaining('Configuration drift detected')
+                expect.stringContaining('⚠️')
             );
         });
     });

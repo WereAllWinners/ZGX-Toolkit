@@ -23,6 +23,13 @@
         {{/if}}
     </div>
 
+    <div class="tab-bar" role="tablist">
+        <button class="tab-btn tab-active" data-tab="overview" role="tab">Overview</button>
+        <button class="tab-btn" data-tab="policy" role="tab">Policy</button>
+    </div>
+
+    <div class="tab-panel" id="tab-overview">
+
     {{#unless hasSnapshot}}
     <div class="empty-state">
         <i class="codicon codicon-database"></i>
@@ -119,4 +126,75 @@
     {{/if}}
 
     {{/if}}
+
+    </div><!-- /tab-overview -->
+
+    <div class="tab-panel tab-hidden" id="tab-policy">
+    {{#unless hasBaseline}}
+    <div class="empty-state">
+        <i class="codicon codicon-git-compare"></i>
+        <p>No baseline has been captured for this device.</p>
+        <p class="policy-hint">Capture a baseline on a known-good device state to enable drift detection.</p>
+        <button class="btn" data-action="capture-baseline">
+            <i class="codicon codicon-save"></i>
+            Capture Baseline
+        </button>
+    </div>
+    {{/unless}}
+
+    {{#if hasBaseline}}
+    <div class="policy-header">
+        <div class="policy-baseline-info">
+            <span class="info-label">Baseline captured:</span>
+            <span class="info-value mono">{{baselineCapturedAt}}</span>
+        </div>
+        <div class="policy-actions">
+            <button class="btn btn-secondary" data-action="capture-baseline">
+                <i class="codicon codicon-save"></i>
+                Update Baseline
+            </button>
+            <button class="btn" data-action="check-drift">
+                <i class="codicon codicon-diff"></i>
+                Check Drift
+            </button>
+        </div>
+    </div>
+
+    {{#if driftReport}}
+    <div class="drift-result">
+        <div class="drift-summary {{#if driftReport.driftDetected}}drift-detected{{else}}drift-clean{{/if}}">
+            <i class="codicon {{#if driftReport.driftDetected}}codicon-warning{{else}}codicon-pass-filled{{/if}}"></i>
+            <span>{{driftReport.summary}}</span>
+            {{#if driftReport.driftDetected}}
+            <button class="btn btn-secondary drift-export-btn" data-action="export-remediation">
+                <i class="codicon codicon-export"></i>
+                Export Playbook
+            </button>
+            {{/if}}
+        </div>
+
+        {{#if driftReport.findings}}
+        <div class="findings-table">
+            <div class="findings-header">
+                <span>Severity</span>
+                <span>Field</span>
+                <span>Baseline</span>
+                <span>Current</span>
+            </div>
+            {{#each driftReport.findings}}
+            <div class="finding-row severity-{{severity}}">
+                <span class="finding-severity">{{severity}}</span>
+                <span class="finding-field mono">{{field}}</span>
+                <span class="finding-value mono">{{baselineValue}}</span>
+                <span class="finding-value mono">{{currentValue}}</span>
+            </div>
+            {{/each}}
+        </div>
+        {{/if}}
+    </div>
+    {{/if}}
+
+    {{/if}}
+    </div><!-- /tab-policy -->
+
 </div>

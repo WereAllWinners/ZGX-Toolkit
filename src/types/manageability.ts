@@ -1,5 +1,5 @@
 /*
- * Copyright ©2025 HP Development Company, L.P.
+ * Copyright © 2026 Jerome Gabryszewski
  * Licensed under the X11 License. See LICENSE file in the project root for details.
  */
 
@@ -180,3 +180,41 @@ export const DGX_TOOL_COMMANDS = {
 } as const;
 
 export type DGXToolKey = keyof typeof DGX_TOOL_COMMANDS;
+
+// ---------------------------------------------------------------------------
+// Drift detection
+// ---------------------------------------------------------------------------
+
+/** A single drift finding — one field that changed from baseline. */
+export interface DriftFinding {
+    /** Broad category: 'os' | 'driver' | 'firmware' | 'software' | 'hardware' */
+    category: string;
+    /** Canonical dot-path of the field, e.g. 'drivers.gpuDriverVersion' */
+    field: string;
+    /** Value recorded in baseline */
+    baselineValue: string;
+    /** Current value on device */
+    currentValue: string;
+    /** Severity — determines sort order and output channel formatting */
+    severity: 'info' | 'warning' | 'critical';
+}
+
+/** Full drift report for a device. */
+export interface DriftReport {
+    deviceId: string;
+    deviceName: string;
+    baselineCapturedAt: string;
+    checkedAt: string;
+    driftDetected: boolean;
+    summary: string;
+    findings: DriftFinding[];
+    baseline: ManageabilitySnapshot;
+    current: ManageabilitySnapshot;
+}
+
+/** Result returned by ManageabilityService.checkAnsibleDrift(). */
+export interface DriftCheckResult {
+    driftDetected: boolean;
+    summary: string;
+    report: DriftReport;
+}

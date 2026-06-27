@@ -1,5 +1,5 @@
 /*
- * Copyright ©2025 HP Development Company, L.P.
+ * Copyright © 2026 Jerome Gabryszewski
  * Licensed under the X11 License. See LICENSE file in the project root for details.
  */
 
@@ -14,6 +14,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as vscode from 'vscode';
 import { Device } from '../types/devices';
 import { logger } from '../utils/logger';
 import { executeSSHCommand } from '../utils/sshConnection';
@@ -30,6 +31,9 @@ import {
     SoftwareInventory,
     DiagHealthResult,
     UpdatePosture,
+    DriftFinding,
+    DriftReport,
+    DriftCheckResult,
 } from '../types/manageability';
 import { deviceService } from './deviceService';
 
@@ -401,6 +405,289 @@ export class ManageabilityService {
         return this.runTool<DiagHealthResult>(device, 'spark_diagctl', {
             timeoutSeconds: TIMEOUT_DIAG_BUNDLE,
         });
+    }
+
+    // -----------------------------------------------------------------------
+    // Drift detection
+    // -----------------------------------------------------------------------
+
+    /** Directory where baseline JSON files are stored. Set via initialize(). */
+    private storageDir: string = '';
+    /** Output channel for policy drift reporting. Set via initialize(). */
+    private policyChannel: vscode.OutputChannel | undefined;
+
+    /**
+     * Call once during extension activation to wire up storage and the output channel.
+     */
+    public initialize(context: vscode.ExtensionContext): void {
+        this.storageDir = context.globalStorageUri.fsPath;
+        this.policyChannel = vscode.window.createOutputChannel('ZGX Toolkit — Policy');
+        logger.debug('ManageabilityService initialized', { storageDir: this.storageDir });
+    }
+
+    /** Absolute path of the baselines sub-directory. */
+    private get baselinesDir(): string {
+        return path.join(this.storageDir, 'baselines');
+    }
+
+    /** Absolute path for a device's baseline file. */
+    private baselinePath(deviceId: string): string {
+        return path.join(this.baselinesDir, `${deviceId}.json`);
+    }
+
+    /**
+     * Capture and store the current ManageabilitySnapshot as the drift baseline.
+     * The snapshot must already exist in device.metadata.manageabilitySnapshot;
+     * call collectInventory() first if it is absent.
+     */
+    async captureBaseline(device: Device): Promise<void> {
+        const snapshot = device.metadata?.manageabilitySnapshot as ManageabilitySnapshot | undefined;
+        if (!snapshot) {
+            throw new Error(
+                `No inventory snapshot for "${device.name}". Run "Collect Device Inventory" first.`
+            );
+        }
+
+        await fs.promises.mkdir(this.baselinesDir, { recursive: true });
+        await fs.promises.writeFile(
+            this.baselinePath(device.id),
+            JSON.stringify(snapshot, null, 2),
+            'utf8'
+        );
+        logger.info('Baseline captured', { device: device.name, path: this.baselinePath(device.id) });
+    }
+
+    /**
+     * Load the stored baseline for a device, or undefined if none exists.
+     */
+    async getBaseline(device: Device): Promise<ManageabilitySnapshot | undefined> {
+        try {
+            const raw = await fs.promises.readFile(this.baselinePath(device.id), 'utf8');
+            return JSON.parse(raw) as ManageabilitySnapshot;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Compare the current device snapshot against the stored baseline and return
+     * a structured drift report. If no baseline exists, offers to capture one.
+     *
+     * Current state is read from device.metadata.manageabilitySnapshot — the
+     * snapshot written by the last collectInventory() call, not a fresh SSH run.
+     */
+    async checkAnsibleDrift(device: Device, inventoryPath: string): Promise<DriftCheckResult> {
+        logger.info('Checking Ansible policy drift', { device: device.name, inventoryPath });
+
+        const baseline = await this.getBaseline(device);
+        const checkedAt = new Date().toISOString();
+
+        if (!baseline) {
+            const choice = await vscode.window.showInformationMessage(
+                `ZGX Toolkit: No baseline for "${device.name}". Capture one now?`,
+                'Capture Baseline',
+                'Cancel'
+            );
+
+            if (choice === 'Capture Baseline') {
+                await this.captureBaseline(device);
+                const captured = `Baseline captured at ${checkedAt}. Run drift check again to compare.`;
+                logger.info(captured, { device: device.name });
+                return this.emptyDriftResult(device.id, device.name, checkedAt, captured);
+            }
+
+            const noBaseline = 'No baseline available. Capture a baseline on a known-good device first.';
+            return this.emptyDriftResult(device.id, device.name, checkedAt, noBaseline);
+        }
+
+        const current = device.metadata?.manageabilitySnapshot as ManageabilitySnapshot | undefined
+            ?? { collectedAt: checkedAt };
+
+        const findings = this.compareSnapshots(baseline, current);
+
+        // Sort: critical → warning → info
+        const SEVERITY_ORDER = { critical: 0, warning: 1, info: 2 };
+        findings.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+
+        const driftDetected = findings.length > 0;
+        const summary = driftDetected
+            ? `${findings.length} finding(s): ${findings.filter(f => f.severity === 'critical').length} critical, ` +
+              `${findings.filter(f => f.severity === 'warning').length} warning, ` +
+              `${findings.filter(f => f.severity === 'info').length} info`
+            : `${device.name} matches baseline`;
+
+        const report: DriftReport = {
+            deviceId: device.id,
+            deviceName: device.name,
+            baselineCapturedAt: baseline.collectedAt,
+            checkedAt,
+            driftDetected,
+            summary,
+            findings,
+            baseline,
+            current,
+        };
+
+        this.writePolicyReport(report, checkedAt);
+        return { driftDetected, summary, report };
+    }
+
+    /**
+     * Generate a commented YAML remediation playbook for critical and warning findings.
+     * Returns a YAML string — does not write any file.
+     */
+    exportRemediationPlaybook(report: DriftReport): string {
+        const ts = new Date().toISOString();
+        const hostname = report.current?.identity?.data?.hostname ?? report.deviceName;
+
+        const lines: string[] = [
+            `# Drift remediation for ${report.deviceName} — generated ${ts}`,
+            `# Review each task before applying. This is a starting point, not a`,
+            `# runnable playbook. Adjust package names and versions for your environment.`,
+            '---',
+            `- name: Remediate ${report.deviceName}`,
+            `  hosts: "${hostname}"`,
+            '  tasks:',
+        ];
+
+        const actionable = report.findings.filter(f => f.severity !== 'info');
+
+        if (actionable.length === 0) {
+            lines.push('  # No critical or warning findings — nothing to remediate.');
+        }
+
+        for (const finding of actionable) {
+            lines.push('');
+            lines.push(`  # ${finding.severity.toUpperCase()} — ${finding.field} drifted ${finding.baselineValue} → ${finding.currentValue}`);
+            lines.push(`  # Baseline expects: ${finding.baselineValue}`);
+
+            if (finding.field === 'drivers.gpuDriverVersion') {
+                lines.push(`  - name: Pin NVIDIA driver version`);
+                lines.push(`    apt:`);
+                lines.push(`      name: nvidia-driver-${finding.baselineValue.split('.')[0]}=${finding.baselineValue}`);
+                lines.push(`      state: present`);
+                lines.push(`    # NOTE: Adjust package name and version to match your repository`);
+            } else if (finding.field === 'os.kernelVersion') {
+                lines.push(`  - name: Pin kernel version`);
+                lines.push(`    apt:`);
+                lines.push(`      name: "linux-image-${finding.baselineValue}"`);
+                lines.push(`      state: present`);
+            } else {
+                lines.push(`  - name: Remediate ${finding.field}`);
+                lines.push(`    # TODO: implement task for ${finding.field}`);
+                lines.push(`    # Baseline: ${finding.baselineValue} / Current: ${finding.currentValue}`);
+                lines.push(`    debug:`);
+                lines.push(`      msg: "Manual remediation required for ${finding.field}"`);
+            }
+        }
+
+        return lines.join('\n') + '\n';
+    }
+
+    // -----------------------------------------------------------------------
+    // Private drift helpers
+    // -----------------------------------------------------------------------
+
+    private emptyDriftResult(deviceId: string, deviceName: string, checkedAt: string, summary: string): DriftCheckResult {
+        const empty: ManageabilitySnapshot = { collectedAt: '' };
+        const report: DriftReport = {
+            deviceId, deviceName,
+            baselineCapturedAt: '',
+            checkedAt,
+            driftDetected: false,
+            summary,
+            findings: [],
+            baseline: empty,
+            current: empty,
+        };
+        return { driftDetected: false, summary, report };
+    }
+
+    /**
+     * Extract a canonical field value from a snapshot for comparison.
+     * Returns a string so all comparisons are uniform.
+     */
+    private extractField(snapshot: ManageabilitySnapshot, field: string): string {
+        switch (field) {
+            case 'os.kernelVersion':
+                return snapshot.osBuild?.data?.kernel ?? '';
+            case 'os.dgxOsVersion':
+                return snapshot.osBuild?.data?.os_version ?? '';
+            case 'drivers.gpuDriverVersion':
+                return snapshot.drivers?.data?.gpu_driver_version ?? '';
+            case 'drivers.cudaVersion':
+                return snapshot.drivers?.data?.cuda_version ?? '';
+            case 'firmware.bios.version':
+                return snapshot.firmware?.data?.bios_version ?? '';
+            case 'firmware.gpuVbiosVersion':
+                return snapshot.firmware?.data?.gpu_vbios_version ?? '';
+            case 'hardware.gpu.names':
+                return (snapshot.hardware?.data?.gpus ?? []).map(g => g.name).join(',');
+            case 'hardware.memory.totalMb': {
+                const bytes = snapshot.hardware?.data?.total_memory_bytes ?? 0;
+                return String(Math.round(bytes / (1024 * 1024)));
+            }
+            default:
+                return '';
+        }
+    }
+
+    private readonly DRIFT_FIELDS: Array<{ field: string; severity: 'info' | 'warning' | 'critical'; category: string }> = [
+        { field: 'os.kernelVersion',         severity: 'warning',  category: 'os' },
+        { field: 'os.dgxOsVersion',          severity: 'warning',  category: 'os' },
+        { field: 'drivers.gpuDriverVersion', severity: 'critical', category: 'driver' },
+        { field: 'drivers.cudaVersion',      severity: 'warning',  category: 'driver' },
+        { field: 'firmware.bios.version',    severity: 'warning',  category: 'firmware' },
+        { field: 'firmware.gpuVbiosVersion', severity: 'info',     category: 'firmware' },
+        { field: 'hardware.gpu.names',       severity: 'critical', category: 'hardware' },
+        { field: 'hardware.memory.totalMb',  severity: 'warning',  category: 'hardware' },
+    ];
+
+    private compareSnapshots(baseline: ManageabilitySnapshot, current: ManageabilitySnapshot): DriftFinding[] {
+        const findings: DriftFinding[] = [];
+
+        for (const { field, severity, category } of this.DRIFT_FIELDS) {
+            const baselineValue = this.extractField(baseline, field);
+            const currentValue  = this.extractField(current, field);
+
+            if (!baselineValue && !currentValue) { continue; }
+
+            if (field === 'hardware.memory.totalMb') {
+                const bMb = parseInt(baselineValue) || 0;
+                const cMb = parseInt(currentValue) || 0;
+                if (bMb === 0) { continue; }
+                const pctChange = Math.abs(cMb - bMb) / bMb;
+                if (pctChange <= 0.10) { continue; }
+            } else if (baselineValue === currentValue) {
+                continue;
+            }
+
+            findings.push({ category, field, baselineValue, currentValue, severity });
+        }
+
+        return findings;
+    }
+
+    private writePolicyReport(report: DriftReport, checkedAt: string): void {
+        if (!this.policyChannel) { return; }
+
+        if (!report.driftDetected) {
+            this.policyChannel.appendLine(`[OK] ${report.deviceName} matches baseline (checked ${checkedAt})`);
+            return;
+        }
+
+        this.policyChannel.appendLine(
+            `[DRIFT] ${report.deviceName} — ${report.findings.length} finding(s) (checked ${checkedAt})`
+        );
+        this.policyChannel.appendLine('');
+
+        for (const f of report.findings) {
+            const severity = f.severity.toUpperCase().padEnd(10);
+            const field    = f.field.padEnd(40);
+            this.policyChannel.appendLine(`  ${severity}  ${field}  ${f.baselineValue}  →  ${f.currentValue}`);
+        }
+
+        this.policyChannel.show(true);
     }
 }
 

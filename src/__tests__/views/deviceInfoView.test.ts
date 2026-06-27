@@ -110,6 +110,11 @@ function makeDeps(overrides: {
         applyUpdates: jest.fn(),
         generateDiagBundle: jest.fn(),
         getResetReasons: jest.fn(),
+        initialize: jest.fn(),
+        captureBaseline: jest.fn().mockResolvedValue(undefined),
+        getBaseline: jest.fn().mockResolvedValue(undefined),
+        checkAnsibleDrift: jest.fn(),
+        exportRemediationPlaybook: jest.fn().mockReturnValue(''),
         ...overrides.manageabilityService,
     } as any;
 

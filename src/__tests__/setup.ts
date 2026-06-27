@@ -65,13 +65,19 @@ jest.mock('fs', () => {
       end: jest.fn(),
       on: jest.fn(),
     })),
+    // Expose the real fs.promises so tests that use async file I/O work correctly
+    promises: actualFs.promises,
   };
 });
 
-jest.mock('os', () => ({
-  homedir: jest.fn().mockReturnValue('/mock/home'),
-  platform: jest.fn().mockReturnValue('linux'),
-}));
+jest.mock('os', () => {
+  const actualOs = jest.requireActual('os') as any;
+  return {
+    homedir: jest.fn().mockReturnValue('/mock/home'),
+    platform: jest.fn().mockReturnValue('linux'),
+    tmpdir: jest.fn().mockImplementation(() => actualOs.tmpdir()),
+  };
+});
 
 // Mock console.error to suppress expected logger initialization errors during tests
 const originalConsoleError = console.error;

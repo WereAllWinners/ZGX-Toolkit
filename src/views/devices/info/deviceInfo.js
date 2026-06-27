@@ -50,4 +50,30 @@
             }
         }
     });
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var target = btn.getAttribute('data-tab');
+            document.querySelectorAll('.tab-btn').forEach(function (b) {
+                b.classList.remove('tab-active');
+            });
+            document.querySelectorAll('.tab-panel').forEach(function (p) {
+                p.classList.add('tab-hidden');
+            });
+            btn.classList.add('tab-active');
+            var panel = document.getElementById('tab-' + target);
+            if (panel) { panel.classList.remove('tab-hidden'); }
+        });
+    });
+
+    // Policy action buttons (capture-baseline, check-drift, export-remediation)
+    document.querySelectorAll('[data-action]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var action = btn.getAttribute('data-action');
+            btn.disabled = true;
+            vscode.postMessage({ type: action, deviceId: deviceId });
+            setTimeout(function () { btn.disabled = false; }, 5000);
+        });
+    });
 }());

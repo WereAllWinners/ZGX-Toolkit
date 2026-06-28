@@ -33,6 +33,8 @@ export interface TailscaleDeviceMetadata {
     decisionChangedAt?: string;
     /** The device's previous host before Tailscale was enabled (used for revert on disable). */
     previousHost?: string;
+    /** Live status from the most recent poll run. Absent until the first poll completes. */
+    status?: TailscaleDeviceStatus;
 }
 
 /**
@@ -50,6 +52,20 @@ export interface TailscaleDetectionResult {
 }
 
 /**
+ * Live status for a Tailscale-managed device, updated by the status poller.
+ * Stored under TailscaleDeviceMetadata.status.
+ */
+export interface TailscaleDeviceStatus {
+    online: boolean;
+    /** ISO 8601 timestamp from Tailscale; present only when the peer is offline. */
+    lastSeen?: string;
+    /** How status was obtained — local CLI when client is on tailnet, API otherwise. */
+    source: 'cli' | 'api';
+    /** ISO 8601 timestamp of the poll run that produced this status. */
+    polledAt: string;
+}
+
+/**
  * A peer entry parsed from `tailscale status --json`.
  */
 export interface TailscalePeer {
@@ -58,4 +74,6 @@ export interface TailscalePeer {
     os: string;
     tailnetIp: string;    // first IPv4 from TailscaleIPs
     online: boolean;
+    /** ISO 8601 timestamp; only present in the JSON when the peer is offline. */
+    lastSeen?: string;
 }

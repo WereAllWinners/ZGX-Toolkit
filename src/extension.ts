@@ -12,7 +12,8 @@ import { telemetryService } from './services/telemetryService';
 import { TelemetryEventType } from './types/telemetry';
 import { configService } from './services/configService';
 import { deviceStore, groupStore, userGroupStore } from './store';
-import { deviceService, AppInstallationService, PasswordService, deviceDiscoveryService, extensionStateService, dnsServiceRegistration, connectxGroupService, deviceHealthCheckService, manageabilityService, userGroupService } from './services';
+import { deviceService, AppInstallationService, PasswordService, deviceDiscoveryService, extensionStateService, dnsServiceRegistration, connectxGroupService, deviceHealthCheckService, manageabilityService, userGroupService, tailscaleApiService } from './services';
+import { startTailscaleStatusPoller, stopTailscaleStatusPoller } from './services/tailscaleService';
 import { ConnectionService } from './services/connectionService';
 import { registerCommands, setCommandContext } from './commands';
 import { createGlobalStatePersistenceService } from './services/globalStatePersistenceService';
@@ -133,6 +134,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 logger.error('Failed to start background device updater', { error });
             });
 
+        // Initialize Tailscale API service with SecretStorage
+        tailscaleApiService.initialize(context.secrets);
+
+        // Start Tailscale fleet status poller (non-blocking)
+        startTailscaleStatusPoller(deviceService, tailscaleApiService)
+            .then(() => {
+                logger.debug('Tailscale status poller started');
+            })
+            .catch(error => {
+                logger.error('Failed to start Tailscale status poller', { error });
+            });
+
         // Track activation
         if (extensionStateService.isFirstRun()) {
             logger.info('First run of the extension detected');
@@ -178,6 +191,10 @@ export function deactivate(): void {
     // Stop background updater
     deviceService.stopBackgroundUpdater();
     logger.debug('Background device updater stopped');
+
+    // Stop Tailscale status poller
+    stopTailscaleStatusPoller();
+    logger.debug('Tailscale status poller stopped');
 
     // Cleanup provider
     if (provider) {

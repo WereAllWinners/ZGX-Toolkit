@@ -21,7 +21,7 @@
     {{#if hasDevices}}
     <div class="device-grid">
         {{#each devices}}
-        <div class="device-card{{#unless isSetup}} card-not-setup{{/unless}}" data-device-id="{{id}}">
+        <div class="device-card{{#unless isSetup}} card-not-setup{{/unless}}{{#if tailscaleIsOffline}} ts-offline{{/if}}" data-device-id="{{id}}">
 
             <div class="card-header">
                 <span class="card-device-name">{{name}}</span>
@@ -72,6 +72,23 @@
                     </span>
                 </div>
                 {{/if}}
+                {{#if tailscaleEnabled}}
+                <div class="card-row">
+                    <span class="card-label">Tailscale</span>
+                    <span class="card-value">
+                        {{#if tailscaleIsOffline}}
+                        <span class="ts-badge ts-offline-badge"><i class="codicon codicon-circle-slash"></i> Offline{{#if tailscaleLastSeen}} &middot; {{tailscaleLastSeen}}{{/if}}</span>
+                        {{else}}
+                        <span class="ts-badge ts-on"><i class="codicon codicon-globe"></i> {{tailscaleIp}}</span>
+                        {{/if}}
+                    </span>
+                </div>
+                {{else if tailscaleHasIp}}
+                <div class="card-row">
+                    <span class="card-label">Tailscale</span>
+                    <span class="card-value"><span class="ts-badge ts-off"><i class="codicon codicon-circle-slash"></i> {{tailscaleIp}}</span></span>
+                </div>
+                {{/if}}
             </div>
 
             <div class="card-footer">
@@ -92,6 +109,19 @@
                 {{else}}
                 <button class="btn btn-sm" data-action="setup-manageability" data-device-id="{{id}}" title="Install zgx-collector on this device to enable manageability features">
                     <i class="codicon codicon-cloud-upload"></i> Setup Manageability
+                </button>
+                {{/if}}
+                {{#if tailscaleEnabled}}
+                <button class="btn btn-sm btn-secondary" data-action="tailscale-disable" data-device-id="{{id}}" title="Stop routing SSH through Tailscale and restore the original address">
+                    <i class="codicon codicon-circle-slash"></i> Disable Tailscale
+                </button>
+                {{else if tailscaleHasIp}}
+                <button class="btn btn-sm btn-tailscale" data-action="tailscale-enable" data-device-id="{{id}}" title="Route SSH to this device over its tailnet IP ({{tailscaleIp}})">
+                    <i class="codicon codicon-globe"></i> Enable Tailscale
+                </button>
+                {{else}}
+                <button class="btn btn-sm btn-secondary" data-action="tailscale-detect" data-device-id="{{id}}" title="Detect whether Tailscale is available on this device">
+                    <i class="codicon codicon-search"></i> Detect Tailscale
                 </button>
                 {{/if}}
                 {{else}}

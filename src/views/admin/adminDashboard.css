@@ -524,6 +524,44 @@
 .btn.btn-policy:hover {
     background: color-mix(in srgb, var(--vscode-charts-green, #4ec9b0) 25%, transparent);
 }
+.btn.btn-tailscale {
+    background: color-mix(in srgb, var(--vscode-charts-blue, #4fc1ff) 15%, transparent);
+    color: var(--vscode-charts-blue, #4fc1ff);
+}
+.btn.btn-tailscale:hover {
+    background: color-mix(in srgb, var(--vscode-charts-blue, #4fc1ff) 25%, transparent);
+}
+
+/* ── Tailscale status badge (card-body row) ──────────────── */
+
+.ts-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+.ts-badge .codicon { font-size: 11px; }
+.ts-on {
+    background: color-mix(in srgb, var(--vscode-charts-blue, #4fc1ff) 15%, transparent);
+    color: var(--vscode-charts-blue, #4fc1ff);
+}
+.ts-off {
+    background: color-mix(in srgb, var(--vscode-descriptionForeground) 12%, transparent);
+    color: var(--vscode-descriptionForeground);
+}
+
+/* Tailscale offline card — greyed out to indicate unreachable */
+.device-card.ts-offline {
+    opacity: 0.65;
+}
+
+/* Offline status badge in the Tailscale row */
+.ts-offline-badge {
+    background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 12%, transparent);
+    color: var(--vscode-editorWarning-foreground);
+}
 
 /* ── Policy section in group form ────────────────────────── */
 

@@ -19,6 +19,7 @@ import { TelemetryEventType } from '../types/telemetry';
 import { ZgxToolkitProvider } from '../providers';
 import { registerManageabilityCommands } from './manageabilityCommands';
 import { registerTailscaleCommands } from './tailscaleCommands';
+import { registerTailscaleApiCommands } from './tailscaleApiCommands';
 
 /**
  * Register all extension commands.
@@ -49,6 +50,7 @@ export function registerCommands(context: vscode.ExtensionContext, zgxProvider: 
 
     registerManageabilityCommands(context, zgxProvider);
     registerTailscaleCommands(context);
+    registerTailscaleApiCommands(context);
 }
 
 /**

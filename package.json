@@ -2,7 +2,7 @@
     "name": "zgx-toolkit",
     "displayName": "ZGX Toolkit",
     "description": "Manage HP ZGX/DGX Spark devices with SSH, device inventory, health monitoring, diagnostics, and Ansible policy enforcement.",
-    "version": "2.0.0",
+    "version": "2.1.2",
     "publisher": "WereAllWinners",
     "icon": "resources/logo-marketplace.png",
     "galleryBanner": {
@@ -159,6 +159,16 @@
                 "command": "zgxToolkit.detectTailscale",
                 "title": "ZGX Toolkit: Detect Tailscale for Device",
                 "icon": "$(search)"
+            },
+            {
+                "command": "zgxToolkit.configureTailscaleApi",
+                "title": "ZGX Toolkit: Configure Tailscale API (OAuth)",
+                "icon": "$(key)"
+            },
+            {
+                "command": "zgxToolkit.clearTailscaleApiCredentials",
+                "title": "ZGX Toolkit: Clear Tailscale API Credentials",
+                "icon": "$(trash)"
             }
         ],
         "configuration": {
@@ -212,6 +222,13 @@
                     "type": "boolean",
                     "default": true,
                     "description": "When Tailscale is detected for a device, show a one-time prompt asking whether to use the tailnet IP for SSH. If off, detection still runs but no prompt is shown (you can opt in per device via the command palette)."
+                },
+                "zgxToolkit.tailscale.statusPollIntervalMinutes": {
+                    "type": "number",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 60,
+                    "description": "How often (in minutes) to poll Tailscale device status. Uses the local tailscale CLI when available; falls back to the Tailscale API if OAuth credentials are configured."
                 }
             }
         }

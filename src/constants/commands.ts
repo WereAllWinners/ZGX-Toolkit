@@ -48,6 +48,9 @@ export const COMMANDS = {
     ENABLE_TAILSCALE:          'zgxToolkit.enableTailscaleForDevice',
     DISABLE_TAILSCALE:         'zgxToolkit.disableTailscaleForDevice',
     DETECT_TAILSCALE:          'zgxToolkit.detectTailscale',
+    // Tailscale API credential commands (Phase 2)
+    CONFIGURE_TAILSCALE_API:         'zgxToolkit.configureTailscaleApi',
+    CLEAR_TAILSCALE_API_CREDENTIALS: 'zgxToolkit.clearTailscaleApiCredentials',
 } as const;
 
 /**

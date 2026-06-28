@@ -9,9 +9,10 @@
  * device-side detection, combined detection, and metadata building.
  */
 
-import { TailscaleService } from '../../services/tailscaleService';
+import { TailscaleService, tailscaleService, pollManagedDeviceStatus } from '../../services/tailscaleService';
 import { Device } from '../../types/devices';
 import { TailscaleDetectionResult } from '../../types/tailscale';
+import * as vscode from 'vscode';
 
 // Mock SSH utility so no real network calls happen
 jest.mock('../../utils/sshConnection', () => ({
@@ -195,6 +196,31 @@ describe('TailscaleService', () => {
             const noPeers = { Self: { TailscaleIPs: ['100.99.0.1'] }, Peer: {} };
             const result = svc.parseClientStatus(noPeers);
             expect(result.peers).toHaveLength(0);
+        });
+
+        it('propagates LastSeen for offline peers', () => {
+            const withLastSeen = {
+                Self: { TailscaleIPs: ['100.99.0.1'] },
+                Peer: {
+                    key: {
+                        HostName: 'old-device',
+                        DNSName: 'old-device.ts.net.',
+                        OS: 'linux',
+                        TailscaleIPs: ['100.100.50.5'],
+                        Online: false,
+                        LastSeen: '2026-06-28T10:00:00Z',
+                    },
+                },
+            };
+            const result = svc.parseClientStatus(withLastSeen);
+            expect(result.peers[0].lastSeen).toBe('2026-06-28T10:00:00Z');
+            expect(result.peers[0].online).toBe(false);
+        });
+
+        it('leaves lastSeen undefined for online peers', () => {
+            const result = svc.parseClientStatus(sampleJson);
+            const online = result.peers.find(p => p.hostName === 'dgx-spark-test');
+            expect(online?.lastSeen).toBeUndefined();
         });
     });
 
@@ -427,5 +453,160 @@ describe('TailscaleService', () => {
             const meta = svc.buildMetadata('enabled', baseResult, true);
             expect(meta.previousHost).toBeUndefined();
         });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// pollManagedDeviceStatus
+// ---------------------------------------------------------------------------
+
+describe('pollManagedDeviceStatus', () => {
+    const managedDevice: Device = {
+        id: 'dev-001',
+        name: 'spark1',
+        host: '100.100.50.10',
+        username: 'nvidia',
+        port: 22,
+        isSetup: true,
+        useKeyAuth: true,
+        keySetup: { keyGenerated: true, keyCopied: true, connectionTested: true },
+        createdAt: new Date().toISOString(),
+        metadata: {
+            tailscale: {
+                decision: 'enabled',
+                promptShown: true,
+                tailnetIp: '100.100.50.10',
+            },
+        },
+    } as any;
+
+    let detectSpy: jest.SpyInstance;
+    let mockDeviceSvc: any;
+    let mockApiSvc: any;
+
+    beforeEach(() => {
+        detectSpy = jest.spyOn(tailscaleService, 'detectOnClient');
+        mockDeviceSvc = {
+            getAllDevices:  jest.fn().mockResolvedValue([managedDevice]),
+            updateDevice:  jest.fn().mockResolvedValue(undefined),
+        };
+        mockApiSvc = {
+            isConfigured: jest.fn().mockResolvedValue(false),
+            listDevices:  jest.fn().mockResolvedValue([]),
+        };
+        // Make getConfiguration return real-looking defaults
+        (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+            get: jest.fn((key: string, def?: any) => def),
+        });
+    });
+
+    afterEach(() => {
+        detectSpy.mockRestore();
+    });
+
+    it('skips poll when tailscale.enabled is false', async () => {
+        (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+            get: jest.fn().mockReturnValue(false),
+        });
+        await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
+        expect(mockDeviceSvc.getAllDevices).not.toHaveBeenCalled();
+    });
+
+    it('skips poll when no managed devices exist', async () => {
+        mockDeviceSvc.getAllDevices.mockResolvedValue([]);
+        detectSpy.mockResolvedValue({ up: true, peers: [] });
+        await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
+        expect(mockDeviceSvc.updateDevice).not.toHaveBeenCalled();
+    });
+
+    it('CLI path: updates device status with source:cli when client is up', async () => {
+        detectSpy.mockResolvedValue({
+            up: true,
+            selfIp: '100.99.0.1',
+            peers: [{
+                hostName: 'spark1',
+                dnsName: 'spark1.ts.net',
+                os: 'linux',
+                tailnetIp: '100.100.50.10',
+                online: true,
+            }],
+        });
+
+        await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
+
+        expect(mockDeviceSvc.updateDevice).toHaveBeenCalledTimes(1);
+        const [, updates] = mockDeviceSvc.updateDevice.mock.calls[0];
+        expect(updates.metadata.tailscale.status.source).toBe('cli');
+        expect(updates.metadata.tailscale.status.online).toBe(true);
+        expect(updates.metadata.tailscale.status.polledAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it('CLI path: propagates lastSeen for offline peer', async () => {
+        detectSpy.mockResolvedValue({
+            up: true,
+            selfIp: '100.99.0.1',
+            peers: [{
+                hostName: 'spark1',
+                dnsName: 'spark1.ts.net',
+                os: 'linux',
+                tailnetIp: '100.100.50.10',
+                online: false,
+                lastSeen: '2026-06-28T08:00:00Z',
+            }],
+        });
+
+        await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
+
+        const [, updates] = mockDeviceSvc.updateDevice.mock.calls[0];
+        expect(updates.metadata.tailscale.status.online).toBe(false);
+        expect(updates.metadata.tailscale.status.lastSeen).toBe('2026-06-28T08:00:00Z');
+    });
+
+    it('CLI path: skips device when no matching peer found', async () => {
+        detectSpy.mockResolvedValue({
+            up: true,
+            selfIp: '100.99.0.1',
+            peers: [{ hostName: 'other', dnsName: 'other.ts.net', os: 'linux', tailnetIp: '100.100.99.99', online: true }],
+        });
+
+        await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
+        expect(mockDeviceSvc.updateDevice).not.toHaveBeenCalled();
+    });
+
+    it('API fallback: updates device when client not on tailnet and API is configured', async () => {
+        detectSpy.mockResolvedValue({ up: false, peers: [] });
+        mockApiSvc.isConfigured.mockResolvedValue(true);
+        mockApiSvc.listDevices.mockResolvedValue([{
+            nodeId: 'node1',
+            hostname: 'spark1',
+            tailnetIp: '100.100.50.10',
+            online: false,
+            lastSeen: '2026-06-28T07:00:00Z',
+        }]);
+
+        await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
+
+        expect(mockDeviceSvc.updateDevice).toHaveBeenCalledTimes(1);
+        const [, updates] = mockDeviceSvc.updateDevice.mock.calls[0];
+        expect(updates.metadata.tailscale.status.source).toBe('api');
+        expect(updates.metadata.tailscale.status.online).toBe(false);
+        expect(updates.metadata.tailscale.status.lastSeen).toBe('2026-06-28T07:00:00Z');
+    });
+
+    it('API fallback: skips when client not on tailnet and API not configured', async () => {
+        detectSpy.mockResolvedValue(undefined);
+        mockApiSvc.isConfigured.mockResolvedValue(false);
+
+        await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
+        expect(mockDeviceSvc.updateDevice).not.toHaveBeenCalled();
+    });
+
+    it('API fallback: logs warning and skips on API error', async () => {
+        detectSpy.mockResolvedValue(undefined);
+        mockApiSvc.isConfigured.mockResolvedValue(true);
+        mockApiSvc.listDevices.mockRejectedValue(new Error('Network error'));
+
+        await expect(pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc)).resolves.toBeUndefined();
+        expect(mockDeviceSvc.updateDevice).not.toHaveBeenCalled();
     });
 });

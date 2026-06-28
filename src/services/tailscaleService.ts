@@ -19,11 +19,13 @@ import { logger } from '../utils/logger';
 import { Device } from '../types/devices';
 import {
     TailscaleDeviceMetadata,
+    TailscaleDeviceStatus,
     TailscaleDetectionResult,
     TailscalePeer,
 } from '../types/tailscale';
 import { executeSSHCommand } from '../utils/sshConnection';
 import type { DeviceService } from './deviceService';
+import type { TailscaleApiService } from './tailscaleApiService';
 
 export class TailscaleService {
 
@@ -147,6 +149,7 @@ export class TailscaleService {
                 os: p?.OS ?? '',
                 tailnetIp: ipv4,
                 online: p?.Online === true,
+                lastSeen: p?.LastSeen as string | undefined,
             };
         };
         const selfIps: string[] = json?.Self?.TailscaleIPs ?? [];
@@ -295,4 +298,116 @@ export async function runTailscaleDetectionFlow(
             : `${device.name} will keep using its current address. You can enable ` +
               `Tailscale later from the command palette.`
     );
+}
+
+// ---------------------------------------------------------------------------
+// Fleet status polling (Phase 2)
+// ---------------------------------------------------------------------------
+
+let statusPollTimer: ReturnType<typeof setInterval> | undefined;
+
+/**
+ * Run one status poll cycle for all Tailscale-managed devices.
+ *
+ * CLI-first: uses `tailscale status --json` from the local machine when the
+ * client is on the tailnet (fastest, no credentials). Falls back to the
+ * Tailscale API when the client is not connected.
+ */
+export async function pollManagedDeviceStatus(
+    deviceSvc: DeviceService,
+    apiService: TailscaleApiService
+): Promise<void> {
+    const config = vscode.workspace.getConfiguration('zgxToolkit');
+    if (!config.get<boolean>('tailscale.enabled', true)) { return; }
+
+    const allDevices = await deviceSvc.getAllDevices();
+    const managedDevices = allDevices.filter(d => {
+        const tsMeta = d.metadata?.tailscale as TailscaleDeviceMetadata | undefined;
+        return tsMeta?.decision === 'enabled' && !!tsMeta?.tailnetIp;
+    });
+    if (managedDevices.length === 0) { return; }
+
+    const polledAt = new Date().toISOString();
+
+    // ── CLI path ─────────────────────────────────────────────────────────────
+    const clientStatus = await tailscaleService.detectOnClient();
+    if (clientStatus?.up) {
+        for (const device of managedDevices) {
+            const tsMeta = device.metadata!.tailscale as TailscaleDeviceMetadata;
+            const peer = clientStatus.peers.find(p => p.tailnetIp === tsMeta.tailnetIp);
+            if (!peer) { continue; }
+
+            const status: TailscaleDeviceStatus = {
+                online:   peer.online,
+                lastSeen: peer.lastSeen,
+                source:   'cli',
+                polledAt,
+            };
+            await deviceSvc.updateDevice(device.id, {
+                metadata: { ...(device.metadata ?? {}), tailscale: { ...tsMeta, status } },
+            });
+        }
+        return;
+    }
+
+    // ── API fallback ──────────────────────────────────────────────────────────
+    if (!await apiService.isConfigured()) { return; }
+
+    let apiDevices: Awaited<ReturnType<typeof apiService.listDevices>>;
+    try {
+        apiDevices = await apiService.listDevices();
+    } catch (err) {
+        logger.warn('Tailscale status: API poll failed', {
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return;
+    }
+
+    for (const device of managedDevices) {
+        const tsMeta = device.metadata!.tailscale as TailscaleDeviceMetadata;
+        const apiDevice = apiDevices.find(d => d.tailnetIp === tsMeta.tailnetIp);
+        if (!apiDevice) { continue; }
+
+        const status: TailscaleDeviceStatus = {
+            online:   apiDevice.online,
+            lastSeen: apiDevice.lastSeen,
+            source:   'api',
+            polledAt,
+        };
+        await deviceSvc.updateDevice(device.id, {
+            metadata: { ...(device.metadata ?? {}), tailscale: { ...tsMeta, status } },
+        });
+    }
+}
+
+/**
+ * Start the recurring status poll. Runs an initial poll immediately.
+ * Interval is read from `zgxToolkit.tailscale.statusPollIntervalMinutes`.
+ */
+export async function startTailscaleStatusPoller(
+    deviceSvc: DeviceService,
+    apiService: TailscaleApiService
+): Promise<void> {
+    const config = vscode.workspace.getConfiguration('zgxToolkit');
+    const intervalMinutes = config.get<number>('tailscale.statusPollIntervalMinutes', 5);
+    const intervalMs = Math.max(1, intervalMinutes) * 60_000;
+
+    const runPoll = () =>
+        pollManagedDeviceStatus(deviceSvc, apiService).catch(err => {
+            logger.warn('Tailscale status: poll failed', {
+                error: err instanceof Error ? err.message : String(err),
+            });
+        });
+
+    // Initial poll (non-blocking)
+    runPoll();
+    statusPollTimer = setInterval(runPoll, intervalMs);
+}
+
+/** Stop the recurring status poll. */
+export function stopTailscaleStatusPoller(): void {
+    if (statusPollTimer !== undefined) {
+        clearInterval(statusPollTimer);
+        statusPollTimer = undefined;
+    }
 }

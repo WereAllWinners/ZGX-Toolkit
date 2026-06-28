@@ -23,3 +23,4 @@ export { ManageabilityService, manageabilityService, InstallCollectorResult } fr
 export { UserGroupService, userGroupService } from './userGroupService';
 export { AnsibleService, ansibleService } from './ansibleService';
 export { TailscaleService, tailscaleService, runTailscaleDetectionFlow } from './tailscaleService';
+export { TailscaleApiService, tailscaleApiService } from './tailscaleApiService';

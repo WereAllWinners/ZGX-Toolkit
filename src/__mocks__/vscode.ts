@@ -22,6 +22,7 @@ export   const ConfigurationTarget = {
     showWarningMessage: jest.fn().mockResolvedValue('OK'),
     showQuickPick: jest.fn(),
     showInputBox: jest.fn(),
+    withProgress: jest.fn().mockImplementation((_opts: any, task: () => Promise<any>) => task()),
     createWebviewPanel: jest.fn(),
     registerWebviewViewProvider: jest.fn(),
   };
@@ -64,6 +65,12 @@ export const Uri = {
     fsPath: `${uri.fsPath}/${pathSegments.join('/')}`,
     toString: () => `${uri.fsPath}/${pathSegments.join('/')}`
   })),
+};
+
+export const ProgressLocation = {
+  Notification: 15,
+  Window: 10,
+  SourceControl: 1,
 };
 
 export const ViewColumn = {

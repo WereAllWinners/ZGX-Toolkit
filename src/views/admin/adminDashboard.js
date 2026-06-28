@@ -87,6 +87,21 @@
                         setGroupLoading(groupId, true);
                         vscode.postMessage({ type: 'groupRunPolicy', groupId });
                         break;
+                    case 'tailscale-enable':
+                        if (!deviceId) { return; }
+                        setCardLoading(deviceId, true);
+                        vscode.postMessage({ type: 'tailscaleEnable', deviceId });
+                        break;
+                    case 'tailscale-disable':
+                        if (!deviceId) { return; }
+                        setCardLoading(deviceId, true);
+                        vscode.postMessage({ type: 'tailscaleDisable', deviceId });
+                        break;
+                    case 'tailscale-detect':
+                        if (!deviceId) { return; }
+                        setCardLoading(deviceId, true);
+                        vscode.postMessage({ type: 'tailscaleDetect', deviceId });
+                        break;
                 }
             });
         });

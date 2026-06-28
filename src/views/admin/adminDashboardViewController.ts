@@ -15,6 +15,8 @@ import { AnsibleService } from '../../services/ansibleService';
 import { ManageabilitySnapshot } from '../../types/manageability';
 import { GroupPolicy } from '../../types/userGroup';
 import { DeviceInfoViewController } from '../devices/info/deviceInfoViewController';
+import { tailscaleService } from '../../services/tailscaleService';
+import { TailscaleDeviceMetadata } from '../../types/tailscale';
 
 const HEALTH_ICONS: Record<string, string> = {
     healthy:  'codicon-pass-filled',
@@ -98,6 +100,11 @@ export class AdminDashboardViewController extends BaseViewController {
             groupNames:   deviceGroupNames.get(d.id) ?? [],
             groupIdsCsv:  (deviceGroupIds.get(d.id) ?? []).join(','),
         }));
+
+        // Sort: Tailscale-enabled offline devices sink to the bottom of the grid
+        cardData.sort((a, b) =>
+            (a.tailscaleIsOffline ? 1 : 0) - (b.tailscaleIsOffline ? 1 : 0)
+        );
 
         const healthyCount  = cardData.filter(c => c.healthStatus === 'healthy').length;
         const degradedCount = cardData.filter(c => c.healthStatus === 'degraded' || c.healthStatus === 'critical').length;
@@ -211,6 +218,141 @@ export class AdminDashboardViewController extends BaseViewController {
             case 'groupUpdates':
                 await this.handleGroupUpdates(msg.groupId);
                 break;
+
+            case 'tailscaleEnable':
+                await this.handleTailscaleEnable(msg.deviceId);
+                break;
+
+            case 'tailscaleDisable':
+                await this.handleTailscaleDisable(msg.deviceId);
+                break;
+
+            case 'tailscaleDetect':
+                await this.handleTailscaleDetect(msg.deviceId);
+                break;
+        }
+    }
+
+    // ── Tailscale handlers ─────────────────────────────────────────────────
+
+    private async handleTailscaleEnable(deviceId: string): Promise<void> {
+        const device = await this.deviceService.getDevice(deviceId);
+        if (!device) { return; }
+
+        try {
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Detecting Tailscale for ${device.name}…` },
+                () => tailscaleService.detect(device)
+            );
+
+            if (!result.tailnetIp) {
+                vscode.window.showInformationMessage(
+                    `ZGX Toolkit: Tailscale not detected for ${device.name}. ` +
+                    `Ensure Tailscale is installed and connected on the device.`
+                );
+                return;
+            }
+
+            const meta = tailscaleService.buildMetadata('enabled', result, true, device.host);
+            await this.deviceService.updateDevice(device.id, {
+                host: result.tailnetIp,
+                metadata: { ...(device.metadata ?? {}), tailscale: meta },
+            });
+            vscode.window.showInformationMessage(
+                `✓ ${device.name} is now routing over Tailscale (${result.tailnetIp}).`
+            );
+            this.logger.info('Tailscale enabled via dashboard', { device: device.name, tailnetIp: result.tailnetIp });
+        } catch (err) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Failed to enable Tailscale for ${device.name} — ` +
+                (err instanceof Error ? err.message : String(err))
+            );
+        } finally {
+            this.sendMessageToWebview({ type: 'clearLoading', deviceId });
+            await this.refresh();
+        }
+    }
+
+    private async handleTailscaleDisable(deviceId: string): Promise<void> {
+        const device = await this.deviceService.getDevice(deviceId);
+        if (!device) { return; }
+
+        try {
+            const existing = device.metadata?.tailscale as TailscaleDeviceMetadata | undefined;
+            const previousHost = existing?.previousHost;
+            const now = new Date().toISOString();
+
+            const meta: TailscaleDeviceMetadata = {
+                ...(existing ?? { decision: 'disabled', promptShown: true }),
+                decision: 'disabled',
+                decisionChangedAt: now,
+            };
+
+            await this.deviceService.updateDevice(device.id, {
+                host: previousHost ?? device.host,
+                metadata: { ...(device.metadata ?? {}), tailscale: meta },
+            });
+
+            const restoredHost = previousHost ?? device.host;
+            vscode.window.showInformationMessage(
+                `${device.name} is now connecting via ${restoredHost}. Tailscale routing disabled.`
+            );
+            this.logger.info('Tailscale disabled via dashboard', { device: device.name, restoredHost });
+        } catch (err) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Failed to disable Tailscale for ${device.name} — ` +
+                (err instanceof Error ? err.message : String(err))
+            );
+        } finally {
+            this.sendMessageToWebview({ type: 'clearLoading', deviceId });
+            await this.refresh();
+        }
+    }
+
+    private async handleTailscaleDetect(deviceId: string): Promise<void> {
+        const device = await this.deviceService.getDevice(deviceId);
+        if (!device) { return; }
+
+        try {
+            const result = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Detecting Tailscale for ${device.name}…` },
+                () => tailscaleService.detect(device)
+            );
+
+            if (!result.tailnetIp && !result.onDevice && !result.onClient) {
+                vscode.window.showInformationMessage(
+                    `ZGX Toolkit: Tailscale not detected for ${device.name} on either side.`
+                );
+                return;
+            }
+
+            // Persist detection result without changing the decision
+            const existing = device.metadata?.tailscale as TailscaleDeviceMetadata | undefined;
+            const meta = tailscaleService.buildMetadata(
+                existing?.decision ?? 'undecided',
+                result,
+                existing?.promptShown ?? false,
+                existing?.previousHost
+            );
+            await this.deviceService.updateDevice(device.id, {
+                metadata: { ...(device.metadata ?? {}), tailscale: meta },
+            });
+
+            const where = result.onDevice && result.onClient ? 'device and client'
+                : result.onDevice ? 'device' : 'client';
+            const ipPart = result.tailnetIp ? ` — tailnet IP: ${result.tailnetIp}` : '';
+            vscode.window.showInformationMessage(
+                `Tailscale detected on ${where}${ipPart}. Use "Enable Tailscale" on the dashboard to activate routing.`
+            );
+            this.logger.info('Tailscale detect run via dashboard', { device: device.name, ...result });
+        } catch (err) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Tailscale detection failed for ${device.name} — ` +
+                (err instanceof Error ? err.message : String(err))
+            );
+        } finally {
+            this.sendMessageToWebview({ type: 'clearLoading', deviceId });
+            await this.refresh();
         }
     }
 
@@ -1013,10 +1155,28 @@ export class AdminDashboardViewController extends BaseViewController {
             isSetup: device.isSetup,
         };
 
+        // Tailscale state (from cached metadata — no SSH on render)
+        const tsMeta = device.metadata?.tailscale as TailscaleDeviceMetadata | undefined;
+        const tailscaleEnabled  = tsMeta?.decision === 'enabled';
+        const tailscaleHasIp    = !!tsMeta?.tailnetIp;
+        const tsStatus          = tsMeta?.status;
+        const tailscaleIsOffline = tailscaleEnabled && !!tsStatus && !tsStatus.online;
+        const tailscaleLastSeen  = tailscaleIsOffline && tsStatus?.lastSeen
+            ? this.formatAge(tsStatus.lastSeen)
+            : undefined;
+        const tailscaleBase = {
+            tailscaleEnabled,
+            tailscaleHasIp,
+            tailscaleIp: tsMeta?.tailnetIp ?? '',
+            tailscaleIsOffline,
+            tailscaleLastSeen,
+        };
+
         const snapshot = device.metadata?.manageabilitySnapshot as ManageabilitySnapshot | undefined;
         if (!snapshot) {
             return {
                 ...base,
+                ...tailscaleBase,
                 hasSnapshot:       false,
                 healthStatus:      'none',
                 healthStatusLabel: HEALTH_LABELS['none'],
@@ -1066,6 +1226,7 @@ export class AdminDashboardViewController extends BaseViewController {
 
         return {
             ...base,
+            ...tailscaleBase,
             hasSnapshot:       true,
             collectedAt:       snapshot.collectedAt,
             snapshotAge:       this.formatAge(snapshot.collectedAt),

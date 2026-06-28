@@ -14,6 +14,7 @@ import { UserGroupService } from '../../services/userGroupService';
 import { AnsibleService } from '../../services/ansibleService';
 import { ManageabilitySnapshot } from '../../types/manageability';
 import { GroupPolicy } from '../../types/userGroup';
+import { PendingUpdatesState } from '../../types/scheduledUpdates';
 import { DeviceInfoViewController } from '../devices/info/deviceInfoViewController';
 import { tailscaleService } from '../../services/tailscaleService';
 import { TailscaleDeviceMetadata } from '../../types/tailscale';
@@ -229,6 +230,10 @@ export class AdminDashboardViewController extends BaseViewController {
 
             case 'tailscaleDetect':
                 await this.handleTailscaleDetect(msg.deviceId);
+                break;
+
+            case 'openUpdateReview':
+                await this.navigateTo('devices/updates', { deviceId: msg.deviceId }, 'editor');
                 break;
         }
     }
@@ -1224,6 +1229,11 @@ export class AdminDashboardViewController extends BaseViewController {
             ? Math.round(hw.total_memory_bytes / (1024 ** 3))
             : null;
 
+        const pending = device.metadata?.pendingUpdates as PendingUpdatesState | undefined;
+        const hasPendingUpdates =
+            pending?.status === 'available' && (pending?.candidates.length ?? 0) > 0;
+        const pendingUpdatesCount = hasPendingUpdates ? pending!.candidates.length : 0;
+
         return {
             ...base,
             ...tailscaleBase,
@@ -1237,6 +1247,8 @@ export class AdminDashboardViewController extends BaseViewController {
             gpuSummary,
             unifiedMemory,
             totalMemoryGb,
+            hasPendingUpdates,
+            pendingUpdatesCount,
         };
     }
 

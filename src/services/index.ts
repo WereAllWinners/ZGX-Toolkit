@@ -26,3 +26,4 @@ export { TailscaleService, tailscaleService, runTailscaleDetectionFlow } from '.
 export { TailscaleApiService, tailscaleApiService } from './tailscaleApiService';
 export { PlatformProfileService, platformProfileService } from './platformProfileService';
 export { ScheduledCheckupService, scheduledCheckupService } from './scheduledCheckupService';
+export { UpdateReconciliationService, updateReconciliationService } from './updateReconciliationService';

@@ -32,3 +32,42 @@ export interface CheckupResult {
     note?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Task 02: Reconciliation gate types
+// ---------------------------------------------------------------------------
+
+/** Why a package was removed from the approvable candidate list. */
+export type ExclusionReason = 'ansible-pinned' | 'kernel-held' | 'device-held';
+
+/** An update that passed the gate and can be approved via the review panel. */
+export interface UpdateCandidate {
+    package: string;
+    currentVersion: string;
+    availableVersion: string;
+    source: UpdateSource;
+}
+
+/** An update removed from the candidate list by a policy filter. */
+export interface ExcludedUpdate {
+    package: string;
+    currentVersion: string;
+    availableVersion: string;
+    reason: ExclusionReason;
+    /** For ansible-pinned: the pinned version. For held: the currently-installed version. */
+    heldOrPinnedVersion: string;
+}
+
+/** Per-device pending update state stored in metadata.pendingUpdates after reconciliation. */
+export interface PendingUpdatesState {
+    /** ISO 8601 timestamp when reconciliation ran. */
+    computedAt: string;
+    source: UpdateSource;
+    /** Updates that passed all filters and can be approved. */
+    candidates: UpdateCandidate[];
+    /** Updates excluded because the Ansible policy pins the package. */
+    ansibleExclusions: ExcludedUpdate[];
+    /** Updates excluded because the package is held on the device (kernel or apt-mark). */
+    kernelExclusions: ExcludedUpdate[];
+    status: 'available' | 'none';
+}
+

@@ -1,0 +1,125 @@
+<!--
+  Copyright © 2026 Jerome Gabryszewski
+  Licensed under the X11 License. See LICENSE file in the project root for details.
+-->
+
+<div class="container">
+    <div class="header">
+        <div class="header-title-row">
+            <div>
+                <h1><i class="codicon codicon-arrow-circle-up"></i> Update Review</h1>
+                <p class="header-subtitle">{{deviceName}}</p>
+                <p class="collected-at">Checked {{computedAt}} &middot; via {{source}}</p>
+            </div>
+            <button class="btn btn-secondary" id="backBtn">
+                <i class="codicon codicon-arrow-left"></i> Back
+            </button>
+        </div>
+
+        <div class="summary-bar">
+            {{totalAvailable}} available &middot;
+            <span class="summary-candidates">{{candidateCount}} approvable</span>
+            {{#if ansibleCount}} &middot; <span class="summary-held">{{ansibleCount}} held by Ansible policy</span>{{/if}}
+            {{#if kernelCount}} &middot; <span class="summary-held">{{kernelCount}} held by kernel policy</span>{{/if}}
+        </div>
+    </div>
+
+    {{#if hasCandidates}}
+    <section class="section">
+        <div class="section-header">
+            <h2><i class="codicon codicon-check-all"></i> Approvable Updates</h2>
+            <label class="select-all-label">
+                <input type="checkbox" id="selectAll" checked> Select all
+            </label>
+        </div>
+        <table class="update-table">
+            <thead>
+                <tr>
+                    <th class="col-check"></th>
+                    <th>Package</th>
+                    <th>Current</th>
+                    <th>Available</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#each candidates}}
+                <tr class="candidate-row">
+                    <td class="col-check"><input type="checkbox" class="candidate-cb" data-package="{{package}}" checked></td>
+                    <td class="pkg-name">{{package}}</td>
+                    <td class="pkg-version mono">{{currentVersion}}</td>
+                    <td class="pkg-version mono available">{{availableVersion}}</td>
+                    <td><span class="source-tag">{{source}}</span></td>
+                </tr>
+                {{/each}}
+            </tbody>
+        </table>
+
+        <div class="apply-bar">
+            <button class="btn btn-primary" id="applyBtn">
+                <i class="codicon codicon-arrow-circle-up"></i> Approve &amp; Apply Selected
+            </button>
+            <span class="apply-note">Task 03 enables actual installation. This is a preview stub.</span>
+        </div>
+    </section>
+    {{else}}
+    <div class="empty-state">
+        <i class="codicon codicon-check"></i>
+        <p>No approvable updates — all available packages are held by policy.</p>
+    </div>
+    {{/if}}
+
+    {{#if hasAnsibleExclusions}}
+    <section class="section section-held">
+        <h2><i class="codicon codicon-shield"></i> Held by Ansible Policy</h2>
+        <p class="section-note">These packages are version-pinned in your Ansible policy file and will not be updated.</p>
+        <table class="update-table held-table">
+            <thead>
+                <tr>
+                    <th>Package</th>
+                    <th>Installed</th>
+                    <th>Available</th>
+                    <th>Pinned to</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#each ansibleExclusions}}
+                <tr>
+                    <td class="pkg-name">{{package}}</td>
+                    <td class="pkg-version mono">{{currentVersion}}</td>
+                    <td class="pkg-version mono available">{{availableVersion}}</td>
+                    <td class="pkg-version mono pinned">{{heldOrPinnedVersion}}</td>
+                </tr>
+                {{/each}}
+            </tbody>
+        </table>
+    </section>
+    {{/if}}
+
+    {{#if hasKernelExclusions}}
+    <section class="section section-held">
+        <h2><i class="codicon codicon-lock"></i> Held by Kernel / Device Policy</h2>
+        <p class="section-note">These packages are held on the device (<code>apt-mark hold</code> or kernel pinning) and will not be updated.</p>
+        <table class="update-table held-table">
+            <thead>
+                <tr>
+                    <th>Package</th>
+                    <th>Installed</th>
+                    <th>Available</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#each kernelExclusions}}
+                <tr>
+                    <td class="pkg-name">{{package}}</td>
+                    <td class="pkg-version mono">{{currentVersion}}</td>
+                    <td class="pkg-version mono available">{{availableVersion}}</td>
+                    <td><span class="reason-tag reason-{{reason}}">{{reason}}</span></td>
+                </tr>
+                {{/each}}
+            </tbody>
+        </table>
+    </section>
+    {{/if}}
+</div>

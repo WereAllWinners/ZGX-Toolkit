@@ -34,6 +34,25 @@ jest.mock('../../services/deviceService', () => ({
 jest.mock('../../services/platformProfileService', () => ({
     platformProfileService: {
         detect: jest.fn(),
+        getProfile: jest.fn().mockReturnValue(undefined),
+    },
+}));
+
+jest.mock('../../services/updateReconciliationService', () => ({
+    updateReconciliationService: {
+        reconcile: jest.fn().mockResolvedValue({
+            candidates: [],
+            ansibleExclusions: [],
+            kernelExclusions: [],
+        }),
+        buildPendingState: jest.fn().mockReturnValue({
+            computedAt: '2026-06-28T10:00:00Z',
+            source: 'apt',
+            candidates: [],
+            ansibleExclusions: [],
+            kernelExclusions: [],
+            status: 'none',
+        }),
     },
 }));
 

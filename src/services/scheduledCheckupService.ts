@@ -15,6 +15,8 @@ import { logger } from '../utils/logger';
 import { manageabilityService } from './manageabilityService';
 import { platformProfileService } from './platformProfileService';
 import { deviceService } from './deviceService';
+import { updateReconciliationService } from './updateReconciliationService';
+import { PendingUpdatesState } from '../types/scheduledUpdates';
 
 export class ScheduledCheckupService {
     private timer: NodeJS.Timeout | undefined;
@@ -64,14 +66,35 @@ export class ScheduledCheckupService {
 
         const checkupResult = await this.runUpdateAvailability(device);
 
-        await deviceService.updateDevice(device.id, {
+        // Snapshot the device metadata after the checkup result so the reconciler
+        // can read lastCheckup.availableUpdates from the same device reference.
+        const deviceWithCheckup = {
+            ...device,
             metadata: { ...device.metadata, lastCheckup: checkupResult },
+        };
+
+        const { candidates, ansibleExclusions, kernelExclusions } =
+            await updateReconciliationService.reconcile(deviceWithCheckup);
+
+        const pendingUpdates: PendingUpdatesState =
+            updateReconciliationService.buildPendingState(
+                checkupResult.source,
+                candidates,
+                ansibleExclusions,
+                kernelExclusions,
+            );
+
+        await deviceService.updateDevice(device.id, {
+            metadata: { ...device.metadata, lastCheckup: checkupResult, pendingUpdates },
         });
 
         logger.info('Checkup complete', {
             device: device.name,
             source: checkupResult.source,
             updateCount: checkupResult.availableUpdates.length,
+            candidateCount: candidates.length,
+            ansibleExcluded: ansibleExclusions.length,
+            kernelExcluded: kernelExclusions.length,
         });
 
         return checkupResult;

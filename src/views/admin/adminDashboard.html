@@ -58,10 +58,14 @@
                     <span class="card-label">Last collected</span>
                     <span class="card-value{{#unless hasSnapshot}} muted{{/unless}}">{{#if hasSnapshot}}{{snapshotAge}}{{else}}Never{{/if}}</span>
                 </div>
-                {{#if updateCount}}
+                {{#if hasPendingUpdates}}
                 <div class="card-row">
                     <span class="card-label">Updates</span>
-                    <span class="card-value update-pending">{{updateCount}} pending</span>
+                    <span class="card-value">
+                        <button class="update-badge" data-action="open-update-review" data-device-id="{{id}}" title="Review available updates for this device">
+                            <i class="codicon codicon-arrow-circle-up"></i> {{pendingUpdatesCount}} update(s)
+                        </button>
+                    </span>
                 </div>
                 {{/if}}
                 {{#if groupNames}}

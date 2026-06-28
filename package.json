@@ -179,6 +179,10 @@
                 "command": "zgxToolkit.runCheckupNow",
                 "title": "ZGX Toolkit: Run Checkup Now",
                 "icon": "$(checklist)"
+            },
+            {
+                "command": "zgxToolkit.openUpdateReviewPanel",
+                "title": "ZGX Toolkit: Open Update Review Panel"
             }
         ],
         "configuration": {

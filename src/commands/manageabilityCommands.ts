@@ -570,5 +570,26 @@ export function registerManageabilityCommands(
         // Phase 3 internal command (programmatic — not in contributes.commands)
         vscode.commands.registerCommand(COMMANDS.OPEN_DEVICE_INFO_PANEL, (deviceId?: string) =>
             openDeviceInfoPanelCommand(zgxProvider, deviceId)),
+        // Tier 2: open the update review panel for a specific device
+        vscode.commands.registerCommand(COMMANDS.OPEN_UPDATE_REVIEW_PANEL, (deviceId?: string) =>
+            openUpdateReviewPanelCommand(zgxProvider, deviceId)),
     );
+}
+
+async function openUpdateReviewPanelCommand(
+    commandProvider: ZgxToolkitProvider,
+    deviceId?: string,
+): Promise<void> {
+    if (!deviceId) {
+        logger.warn('openUpdateReviewPanel called without deviceId');
+        return;
+    }
+    try {
+        await commandProvider.openInEditor('devices/updates', { deviceId });
+    } catch (error) {
+        logger.error('Failed to open update review panel', { error });
+        vscode.window.showErrorMessage(
+            `ZGX Toolkit: Could not open update review — ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+    }
 }

@@ -102,6 +102,10 @@
                         setCardLoading(deviceId, true);
                         vscode.postMessage({ type: 'tailscaleDetect', deviceId });
                         break;
+                    case 'open-update-review':
+                        if (!deviceId) { return; }
+                        vscode.postMessage({ type: 'openUpdateReview', deviceId });
+                        break;
                 }
             });
         });

@@ -22,3 +22,4 @@ export { DeviceHealthCheckService, deviceHealthCheckService } from './deviceHeal
 export { ManageabilityService, manageabilityService, InstallCollectorResult } from './manageabilityService';
 export { UserGroupService, userGroupService } from './userGroupService';
 export { AnsibleService, ansibleService } from './ansibleService';
+export { TailscaleService, tailscaleService, runTailscaleDetectionFlow } from './tailscaleService';

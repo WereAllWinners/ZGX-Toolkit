@@ -21,6 +21,20 @@ import { deviceDiscoveryService, DeviceDiscoveryService } from './deviceDiscover
 import { BACKGROUND_UPDATER_INTERVAL, MILLISECONDS_PER_MINUTE } from '../constants/time';
 
 /**
+ * Returns true if `host` is in the Tailscale CGNAT range 100.64.0.0/10
+ * (first octet 100, second octet 64–127 inclusive).
+ * Devices with these IPs are not on the local LAN and must not be
+ * handed to the mDNS rediscovery loop.
+ */
+function isTailscaleIP(host: string): boolean {
+    const parts = host.trim().split('.');
+    if (parts.length !== 4) { return false; }
+    const o = parts.map(p => Number(p));
+    if (o.some(n => !Number.isInteger(n) || n < 0 || n > 255)) { return false; }
+    return o[0] === 100 && o[1] >= 64 && o[1] <= 127;
+}
+
+/**
  * Configuration for the DeviceService.
  */
 export interface DeviceServiceConfig {
@@ -451,14 +465,28 @@ export class DeviceService {
             try {
                 logger.debug('Background updater: Starting device rediscovery');
 
-                // Get all devices that are setup, have a DNS instance name, and whose host is an IPv4 address.
-                const devices = (await this.getAllDevices()).filter(device => 
-                    device.isSetup && 
-                    device.dnsInstanceName !== undefined &&
-                    device.dnsInstanceName !== null &&
-                    device.dnsInstanceName.trim().length > 0 &&
-                    net.isIPv4(device.host)
-                );
+                // Get all devices that are setup, have a DNS instance name, and whose host is an IPv4
+                // address that is NOT in the Tailscale CGNAT range. Tailscale-managed devices use
+                // stable tailnet IPs (100.64.0.0/10) that are not on the local LAN, so mDNS
+                // rediscovery would fail and could clobber a valid tailnet address.
+                const allDevices = await this.getAllDevices();
+                const devices = allDevices.filter(device => {
+                    if (!(device.isSetup &&
+                        device.dnsInstanceName !== undefined &&
+                        device.dnsInstanceName !== null &&
+                        device.dnsInstanceName.trim().length > 0 &&
+                        net.isIPv4(device.host))) {
+                        return false;
+                    }
+                    if (isTailscaleIP(device.host)) {
+                        logger.debug('Background updater: Skipping Tailscale-managed device', {
+                            name: device.name,
+                            host: device.host,
+                        });
+                        return false;
+                    }
+                    return true;
+                });
 
                 if (devices.length === 0) {
                     return;

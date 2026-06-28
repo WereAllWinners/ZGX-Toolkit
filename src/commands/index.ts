@@ -18,6 +18,7 @@ import { LOG_LEVEL_OPTIONS, parseLogLevel } from '../constants/logLevels';
 import { TelemetryEventType } from '../types/telemetry';
 import { ZgxToolkitProvider } from '../providers';
 import { registerManageabilityCommands } from './manageabilityCommands';
+import { registerTailscaleCommands } from './tailscaleCommands';
 
 /**
  * Register all extension commands.
@@ -47,6 +48,7 @@ export function registerCommands(context: vscode.ExtensionContext, zgxProvider: 
     );
 
     registerManageabilityCommands(context, zgxProvider);
+    registerTailscaleCommands(context);
 }
 
 /**

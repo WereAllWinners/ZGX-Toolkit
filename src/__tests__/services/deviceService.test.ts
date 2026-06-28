@@ -950,6 +950,34 @@ describe('DeviceService', () => {
             expect(mockDiscoveryService.rediscoverDevices).not.toHaveBeenCalled();
         });
 
+        it('should exclude devices with Tailscale tailnet IP (100.x) from mDNS rediscovery', async () => {
+            const device = await createTestDevice(service, 'Tailscale Device');
+            await service.updateDevice(device.id, {
+                isSetup: true,
+                dnsInstanceName: 'tailscale-instance',
+                host: '100.100.50.5', // Tailscale CGNAT range
+            });
+
+            await service.startBackgroundUpdater(60000);
+
+            // Tailscale device must NOT be handed to mDNS rediscovery
+            expect(mockDiscoveryService.rediscoverDevices).not.toHaveBeenCalled();
+        });
+
+        it('should still include normal LAN IPv4 devices in mDNS rediscovery', async () => {
+            const device = await createTestDevice(service, 'LAN Device');
+            await service.updateDevice(device.id, {
+                isSetup: true,
+                dnsInstanceName: 'lan-instance',
+                host: '192.168.1.100', // Normal LAN address
+            });
+
+            mockDiscoveryService.rediscoverDevices.mockResolvedValue([]);
+            await service.startBackgroundUpdater(60000);
+
+            expect(mockDiscoveryService.rediscoverDevices).toHaveBeenCalledWith(['lan-instance']);
+        });
+
         it('should track telemetry for successful updates', async () => {
             const device = await createTestDevice(service, 'Telemetry Test');
             await service.updateDevice(device.id, {

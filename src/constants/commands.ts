@@ -44,6 +44,10 @@ export const COMMANDS = {
     CHECK_ANSIBLE_DRIFT:       'zgxToolkit.checkAnsiblePolicyDrift',
     // Internal programmatic command — not shown in command palette
     OPEN_DEVICE_INFO_PANEL:    'zgxToolkit.openDeviceInfoPanel',
+    // Tailscale commands (Phase 1)
+    ENABLE_TAILSCALE:          'zgxToolkit.enableTailscaleForDevice',
+    DISABLE_TAILSCALE:         'zgxToolkit.disableTailscaleForDevice',
+    DETECT_TAILSCALE:          'zgxToolkit.detectTailscale',
 } as const;
 
 /**

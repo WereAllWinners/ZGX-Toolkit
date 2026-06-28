@@ -11,6 +11,7 @@ import { Message } from '../../../types/messages';
 import { ConnectionService } from '../../../services/connectionService';
 import { DeviceService } from '../../../services/deviceService';
 import { SetupSuccessViewController } from '../success/setupSuccessViewController';
+import { tailscaleService, runTailscaleDetectionFlow } from '../../../services/tailscaleService';
 
 /**
  * DNS registration view - handles DNS service registration with password prompt
@@ -320,6 +321,11 @@ export class DnsRegistrationViewController extends BaseViewController {
                 connectionTested: true
             }
         });
+
+        // Fire-and-forget: run Tailscale detection after setup without blocking navigation.
+        runTailscaleDetectionFlow(this.currentDevice, tailscaleService, this.deviceService).catch(err =>
+            this.logger.error('Tailscale detection flow failed', { error: err instanceof Error ? err.message : String(err) })
+        );
 
         if (this.setupType === 'manual') {
             await this.navigateTo(SetupSuccessViewController.viewId(), { 

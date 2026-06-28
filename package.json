@@ -144,6 +144,21 @@
                 "command": "zgxToolkit.checkAnsiblePolicyDrift",
                 "title": "ZGX Toolkit: Check Ansible Policy Drift",
                 "icon": "$(diff)"
+            },
+            {
+                "command": "zgxToolkit.enableTailscaleForDevice",
+                "title": "ZGX Toolkit: Use Tailscale for Device",
+                "icon": "$(globe)"
+            },
+            {
+                "command": "zgxToolkit.disableTailscaleForDevice",
+                "title": "ZGX Toolkit: Stop Using Tailscale for Device",
+                "icon": "$(circle-slash)"
+            },
+            {
+                "command": "zgxToolkit.detectTailscale",
+                "title": "ZGX Toolkit: Detect Tailscale for Device",
+                "icon": "$(search)"
             }
         ],
         "configuration": {
@@ -187,6 +202,16 @@
                     "type": "string",
                     "default": "",
                     "description": "Path to the Ansible inventory file for policy drift detection."
+                },
+                "zgxToolkit.tailscale.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Detect Tailscale on your devices and the local machine, and offer to route SSH over tailnet IPs. Turn off to disable all Tailscale detection and prompts."
+                },
+                "zgxToolkit.tailscale.promptOnDetect": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "When Tailscale is detected for a device, show a one-time prompt asking whether to use the tailnet IP for SSH. If off, detection still runs but no prompt is shown (you can opt in per device via the command palette)."
                 }
             }
         }

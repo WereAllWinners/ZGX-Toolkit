@@ -25,3 +25,4 @@ export { AnsibleService, ansibleService } from './ansibleService';
 export { TailscaleService, tailscaleService, runTailscaleDetectionFlow } from './tailscaleService';
 export { TailscaleApiService, tailscaleApiService } from './tailscaleApiService';
 export { PlatformProfileService, platformProfileService } from './platformProfileService';
+export { ScheduledCheckupService, scheduledCheckupService } from './scheduledCheckupService';

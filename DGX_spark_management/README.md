@@ -19,6 +19,7 @@ collectors — they do not modify device state.
 | `driver_inventory_reporter.py` | `drivers` | GPU driver, CUDA/ROCm version, NIC/storage drivers |
 | `software_inventory_reporter.py` | `software` | Installed packages, snaps, pip packages, Docker images |
 | `platform_profile_reporter.py` | `platform-profile` | Cross-platform capability profile: arch, CPU vendor, OS family, package manager, GPU vendor/stack/memory model, kernel flavor, held packages |
+| `update_availability_reporter.py` | `update-availability` | Available package updates per detected package manager (apt/dnf/zypper); read-only, never applies anything |
 
 ## Installation
 

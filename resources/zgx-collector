@@ -901,19 +901,185 @@ def cmd_platform_profile():
     return result
 
 # ---------------------------------------------------------------------------
+# Update availability (read-only, package-manager-first)
+# ---------------------------------------------------------------------------
+
+def _ua_parse_apt():
+    """Return (updates, error_str_or_None) using apt list --upgradable."""
+    try:
+        r = subprocess.run(
+            ["apt", "list", "--upgradable"],
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ, "LANG": "C", "LC_ALL": "C"},
+        )
+        out = r.stdout
+    except Exception as exc:
+        return [], str(exc)
+    updates = []
+    for line in out.splitlines():
+        if line.startswith("Listing") or "/" not in line:
+            continue
+        try:
+            parts = line.split()
+            package = parts[0].split("/")[0]
+            available_version = parts[1] if len(parts) > 1 else ""
+            current_version = ""
+            if "[upgradable from:" in line:
+                current_version = line.split("[upgradable from:")[-1].rstrip("]").strip()
+            updates.append({
+                "package": package,
+                "current_version": current_version,
+                "available_version": available_version,
+            })
+        except Exception:
+            continue
+    return updates, None
+
+
+def _ua_parse_dnf():
+    """Return (updates, error_str_or_None) using dnf check-update.
+    Exit 100 means updates are available — treat as success, not error.
+    """
+    try:
+        r = subprocess.run(
+            ["dnf", "check-update", "--quiet"],
+            capture_output=True, text=True, timeout=120,
+        )
+        rc = r.returncode
+    except Exception as exc:
+        return [], str(exc)
+    if rc not in (0, 100):
+        return [], f"dnf check-update exited with code {rc}"
+
+    installed = {}
+    try:
+        ri = subprocess.run(
+            ["dnf", "list", "--installed", "--quiet"],
+            capture_output=True, text=True, timeout=60,
+        )
+        for line in ri.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                pkg_arch = parts[0]
+                pkg_name = pkg_arch.rsplit(".", 1)[0] if "." in pkg_arch else pkg_arch
+                installed[pkg_name] = parts[1]
+    except Exception:
+        pass
+
+    updates = []
+    in_obsoleting = False
+    for line in r.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if "Obsoleting Packages" in stripped:
+            in_obsoleting = True
+            continue
+        if in_obsoleting:
+            continue
+        parts = stripped.split()
+        if len(parts) < 2:
+            continue
+        try:
+            pkg_arch = parts[0]
+            pkg_name = pkg_arch.rsplit(".", 1)[0] if "." in pkg_arch else pkg_arch
+            available_version = parts[1]
+            current_version = installed.get(pkg_name, "")
+            updates.append({
+                "package": pkg_name,
+                "current_version": current_version,
+                "available_version": available_version,
+            })
+        except Exception:
+            continue
+    return updates, None
+
+
+def _ua_parse_zypper():
+    """Return (updates, error_str_or_None) using zypper list-updates."""
+    try:
+        r = subprocess.run(
+            ["zypper", "--quiet", "list-updates"],
+            capture_output=True, text=True, timeout=60,
+        )
+        out = r.stdout
+    except Exception as exc:
+        return [], str(exc)
+    updates = []
+    for line in out.splitlines():
+        if "|" not in line:
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        # Columns: S | Repository | Name | Current Version | Available Version | Arch
+        if len(parts) < 6:
+            continue
+        name = parts[2]
+        current_version = parts[3]
+        available_version = parts[4]
+        if name in ("Name", "S", "") or not available_version:
+            continue
+        updates.append({
+            "package": name,
+            "current_version": current_version,
+            "available_version": available_version,
+        })
+    return updates, None
+
+
+def cmd_update_availability():
+    # Detect package manager (mirrors platform-profile detection)
+    if shutil.which("apt-get"):
+        pm = "apt"
+    elif shutil.which("dnf"):
+        pm = "dnf"
+    elif shutil.which("zypper"):
+        pm = "zypper"
+    else:
+        pm = "unavailable"
+
+    errors = []
+    updates = []
+
+    if pm == "apt":
+        updates, err = _ua_parse_apt()
+        if err:
+            errors.append({"code": "apt_error", "message": err})
+    elif pm == "dnf":
+        updates, err = _ua_parse_dnf()
+        if err:
+            errors.append({"code": "dnf_error", "message": err})
+    elif pm == "zypper":
+        updates, err = _ua_parse_zypper()
+        if err:
+            errors.append({"code": "zypper_error", "message": err})
+    else:
+        errors.append({
+            "code": "pm_unavailable",
+            "message": "No supported package manager (apt/dnf/zypper) found",
+        })
+
+    result = envelope("update-availability", {"source": pm, "updates": updates})
+    if errors:
+        result["status"] = "partial" if updates else "error"
+        result["errors"] = errors
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 SUBCOMMANDS = {
-    "device-identity":  cmd_device_identity,
-    "os-build":         cmd_os_build,
-    "hardware-config":  cmd_hardware_config,
-    "firmware":         cmd_firmware,
-    "drivers":          cmd_drivers,
-    "software":         cmd_software,
-    "health":           cmd_health,
-    "updates":          cmd_updates,
-    "platform-profile": cmd_platform_profile,
+    "device-identity":     cmd_device_identity,
+    "os-build":            cmd_os_build,
+    "hardware-config":     cmd_hardware_config,
+    "firmware":            cmd_firmware,
+    "drivers":             cmd_drivers,
+    "software":            cmd_software,
+    "health":              cmd_health,
+    "updates":             cmd_updates,
+    "platform-profile":    cmd_platform_profile,
+    "update-availability": cmd_update_availability,
 }
 
 if __name__ == "__main__":

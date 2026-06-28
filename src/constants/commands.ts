@@ -53,6 +53,8 @@ export const COMMANDS = {
     CLEAR_TAILSCALE_API_CREDENTIALS: 'zgxToolkit.clearTailscaleApiCredentials',
     // Platform detection
     DETECT_PLATFORM: 'zgxToolkit.detectPlatform',
+    // Scheduled checkups (Tier 1)
+    RUN_CHECKUP_NOW: 'zgxToolkit.runCheckupNow',
 } as const;
 
 /**

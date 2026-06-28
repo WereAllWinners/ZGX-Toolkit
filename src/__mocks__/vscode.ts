@@ -36,6 +36,7 @@ export const workspace = {
   getConfiguration: jest.fn().mockReturnValue({
     get: jest.fn().mockReturnValue(undefined), // Return undefined so it falls back to environment
   }),
+  onDidChangeConfiguration: jest.fn().mockReturnValue({ dispose: jest.fn() }),
   fs: {
     stat: jest.fn(),
     readFile: jest.fn(),

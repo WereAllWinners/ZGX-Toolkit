@@ -12,7 +12,7 @@ import { telemetryService } from './services/telemetryService';
 import { TelemetryEventType } from './types/telemetry';
 import { configService } from './services/configService';
 import { deviceStore, groupStore, userGroupStore } from './store';
-import { deviceService, AppInstallationService, PasswordService, deviceDiscoveryService, extensionStateService, dnsServiceRegistration, connectxGroupService, deviceHealthCheckService, manageabilityService, userGroupService, tailscaleApiService, platformProfileService } from './services';
+import { deviceService, AppInstallationService, PasswordService, deviceDiscoveryService, extensionStateService, dnsServiceRegistration, connectxGroupService, deviceHealthCheckService, manageabilityService, userGroupService, tailscaleApiService, platformProfileService, scheduledCheckupService } from './services';
 import { startTailscaleStatusPoller, stopTailscaleStatusPoller } from './services/tailscaleService';
 import { ConnectionService } from './services/connectionService';
 import { registerCommands, setCommandContext } from './commands';
@@ -168,6 +168,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 logger.error('Failed to start Tailscale status poller', { error });
             });
 
+        // Start scheduled device checkups (read-only; gated on zgxToolkit.scheduledCheckups.enabled)
+        scheduledCheckupService.start(context);
+
         // Track activation
         if (extensionStateService.isFirstRun()) {
             logger.info('First run of the extension detected');
@@ -217,6 +220,10 @@ export function deactivate(): void {
     // Stop Tailscale status poller
     stopTailscaleStatusPoller();
     logger.debug('Tailscale status poller stopped');
+
+    // Stop scheduled checkup timer
+    scheduledCheckupService.stop();
+    logger.debug('Scheduled checkup service stopped');
 
     // Cleanup provider
     if (provider) {

@@ -167,6 +167,24 @@ export interface ManageabilitySnapshot {
 // Command registry (zgx-collector subcommands installed on managed devices)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Update availability (read-only collector, Task 01)
+// ---------------------------------------------------------------------------
+
+/** Raw data shape from the zgx-collector update-availability envelope. Fields are
+ *  snake_case to match the Python JSON output; mapped to camelCase in the service. */
+export interface UpdateAvailabilityData {
+    source: 'apt' | 'dnf' | 'zypper' | 'unavailable';
+    updates: Array<{
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        package: string;
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        current_version: string;
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        available_version: string;
+    }>;
+}
+
 export const DGX_TOOL_COMMANDS = {
     device_identity:             'zgx-collector device-identity',
     os_build_identity:           'zgx-collector os-build',
@@ -178,6 +196,7 @@ export const DGX_TOOL_COMMANDS = {
     reset_reason_reporter:       'zgx-collector health',
     spark_updatectl:             'zgx-collector updates',
     platform_profile:            'zgx-collector platform-profile',
+    update_availability:         'zgx-collector update-availability',
 } as const;
 
 export type DGXToolKey = keyof typeof DGX_TOOL_COMMANDS;

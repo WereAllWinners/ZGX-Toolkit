@@ -21,6 +21,7 @@ import { registerManageabilityCommands } from './manageabilityCommands';
 import { registerTailscaleCommands } from './tailscaleCommands';
 import { registerTailscaleApiCommands } from './tailscaleApiCommands';
 import { registerPlatformCommands } from './platformCommands';
+import { registerScheduledCheckupCommands } from './scheduledCheckupCommands';
 
 /**
  * Register all extension commands.
@@ -53,6 +54,7 @@ export function registerCommands(context: vscode.ExtensionContext, zgxProvider: 
     registerTailscaleCommands(context);
     registerTailscaleApiCommands(context);
     registerPlatformCommands(context);
+    registerScheduledCheckupCommands(context);
 }
 
 /**

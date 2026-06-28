@@ -174,6 +174,11 @@
                 "command": "zgxToolkit.detectPlatform",
                 "title": "ZGX Toolkit: Detect Platform Profile",
                 "icon": "$(server-environment)"
+            },
+            {
+                "command": "zgxToolkit.runCheckupNow",
+                "title": "ZGX Toolkit: Run Checkup Now",
+                "icon": "$(checklist)"
             }
         ],
         "configuration": {
@@ -234,6 +239,18 @@
                     "minimum": 1,
                     "maximum": 60,
                     "description": "How often (in minutes) to poll Tailscale device status. Uses the local tailscale CLI when available; falls back to the Tailscale API if OAuth credentials are configured."
+                },
+                "zgxToolkit.scheduledCheckups.enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Periodically run read-only checkups on your devices (platform detection, inventory, health, and available-update discovery). This never changes device state; applying updates always requires explicit approval."
+                },
+                "zgxToolkit.scheduledCheckups.intervalHours": {
+                    "type": "number",
+                    "default": 24,
+                    "minimum": 1,
+                    "maximum": 168,
+                    "description": "How often (in hours) scheduled checkups run."
                 }
             }
         }

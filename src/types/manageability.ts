@@ -177,6 +177,7 @@ export const DGX_TOOL_COMMANDS = {
     spark_diagctl:               'zgx-collector health',
     reset_reason_reporter:       'zgx-collector health',
     spark_updatectl:             'zgx-collector updates',
+    platform_profile:            'zgx-collector platform-profile',
 } as const;
 
 export type DGXToolKey = keyof typeof DGX_TOOL_COMMANDS;

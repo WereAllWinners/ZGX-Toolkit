@@ -12,7 +12,7 @@ import { telemetryService } from './services/telemetryService';
 import { TelemetryEventType } from './types/telemetry';
 import { configService } from './services/configService';
 import { deviceStore, groupStore, userGroupStore } from './store';
-import { deviceService, AppInstallationService, PasswordService, deviceDiscoveryService, extensionStateService, dnsServiceRegistration, connectxGroupService, deviceHealthCheckService, manageabilityService, userGroupService, tailscaleApiService } from './services';
+import { deviceService, AppInstallationService, PasswordService, deviceDiscoveryService, extensionStateService, dnsServiceRegistration, connectxGroupService, deviceHealthCheckService, manageabilityService, userGroupService, tailscaleApiService, platformProfileService } from './services';
 import { startTailscaleStatusPoller, stopTailscaleStatusPoller } from './services/tailscaleService';
 import { ConnectionService } from './services/connectionService';
 import { registerCommands, setCommandContext } from './commands';
@@ -136,6 +136,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // Initialize Tailscale API service with SecretStorage
         tailscaleApiService.initialize(context.secrets);
+
+        // Auto-detect platform profile for newly added devices.
+        // seenDeviceIds starts empty; the !d.metadata?.platformProfile guard prevents
+        // redundant SSH calls for existing devices that were persisted across sessions.
+        const seenDeviceIds = new Set<string>();
+        const unsubPlatform = deviceService.subscribe(() => {
+            deviceService.getAllDevices().then(devices => {
+                const newDevices = devices.filter(
+                    d => !seenDeviceIds.has(d.id) && !d.metadata?.platformProfile
+                );
+                devices.forEach(d => seenDeviceIds.add(d.id));
+                for (const d of newDevices) {
+                    platformProfileService.detect(d).catch(err => {
+                        logger.debug('Background platform detection failed', {
+                            device: d.name,
+                            error: err instanceof Error ? err.message : String(err),
+                        });
+                    });
+                }
+            }).catch(() => {});
+        });
+        context.subscriptions.push({ dispose: unsubPlatform });
 
         // Start Tailscale fleet status poller (non-blocking)
         startTailscaleStatusPoller(deviceService, tailscaleApiService)

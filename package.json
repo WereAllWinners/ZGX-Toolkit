@@ -169,6 +169,11 @@
                 "command": "zgxToolkit.clearTailscaleApiCredentials",
                 "title": "ZGX Toolkit: Clear Tailscale API Credentials",
                 "icon": "$(trash)"
+            },
+            {
+                "command": "zgxToolkit.detectPlatform",
+                "title": "ZGX Toolkit: Detect Platform Profile",
+                "icon": "$(server-environment)"
             }
         ],
         "configuration": {

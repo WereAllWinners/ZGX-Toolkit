@@ -36,3 +36,6 @@ export * from './telemetry';
 
 // SSH types
 export * from './ssh';
+
+// Platform profile types
+export * from './platformProfile';

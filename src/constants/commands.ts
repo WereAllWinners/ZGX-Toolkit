@@ -51,6 +51,8 @@ export const COMMANDS = {
     // Tailscale API credential commands (Phase 2)
     CONFIGURE_TAILSCALE_API:         'zgxToolkit.configureTailscaleApi',
     CLEAR_TAILSCALE_API_CREDENTIALS: 'zgxToolkit.clearTailscaleApiCredentials',
+    // Platform detection
+    DETECT_PLATFORM: 'zgxToolkit.detectPlatform',
 } as const;
 
 /**

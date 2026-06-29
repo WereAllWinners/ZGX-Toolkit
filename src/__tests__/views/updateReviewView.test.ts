@@ -30,6 +30,14 @@ jest.mock('../../services/updateReconciliationService', () => ({
     },
 }));
 
+jest.mock('../../services/scheduledCheckupService', () => ({
+    scheduledCheckupService: {
+        runCheckupNow: jest.fn().mockResolvedValue(undefined),
+    },
+}));
+
+import { scheduledCheckupService } from '../../services/scheduledCheckupService';
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -404,6 +412,90 @@ describe('UpdateReviewViewController', () => {
 
             const vscode = require('vscode');
             expect(vscode.window.showWarningMessage).toHaveBeenCalled();
+        });
+    });
+
+    // -------------------------------------------------------------------------
+    // render() — status banners (Task 04)
+    // -------------------------------------------------------------------------
+
+    describe('render() — status banners', () => {
+        it('renders applied banner when status is applied', async () => {
+            const pending = makePending({ status: 'applied' });
+            const device = makeDevice({ pendingUpdates: pending });
+            const { mockLogger, mockTelemetry, mockDeviceService } = makeDeps({
+                getDevice: jest.fn().mockResolvedValue(device),
+            });
+            view = new UpdateReviewViewController({ logger: mockLogger, telemetry: mockTelemetry, deviceService: mockDeviceService });
+
+            const html = await view.render({ deviceId: device.id });
+
+            expect(html).toContain('status-banner-applied');
+        });
+
+        it('renders error banner when status is error', async () => {
+            const pending = makePending({ status: 'error' });
+            const device = makeDevice({ pendingUpdates: pending });
+            const { mockLogger, mockTelemetry, mockDeviceService } = makeDeps({
+                getDevice: jest.fn().mockResolvedValue(device),
+            });
+            view = new UpdateReviewViewController({ logger: mockLogger, telemetry: mockTelemetry, deviceService: mockDeviceService });
+
+            const html = await view.render({ deviceId: device.id });
+
+            expect(html).toContain('status-banner-error');
+        });
+
+        it('shows no status banner when status is available', async () => {
+            const pending = makePending({
+                status: 'available',
+                candidates: [
+                    { package: 'curl', currentVersion: '7.0', availableVersion: '8.0', source: 'apt' },
+                ],
+            });
+            const device = makeDevice({ pendingUpdates: pending });
+            const { mockLogger, mockTelemetry, mockDeviceService } = makeDeps({
+                getDevice: jest.fn().mockResolvedValue(device),
+            });
+            view = new UpdateReviewViewController({ logger: mockLogger, telemetry: mockTelemetry, deviceService: mockDeviceService });
+
+            const html = await view.render({ deviceId: device.id });
+
+            // CSS defines .status-banner-* but no banner div should be rendered for 'available' status
+            expect(html).not.toContain('Updates applied successfully');
+            expect(html).not.toContain('Last apply failed');
+        });
+    });
+
+    // -------------------------------------------------------------------------
+    // handleMessage() — runCheckupNow (Task 04)
+    // -------------------------------------------------------------------------
+
+    describe('handleMessage() — runCheckupNow', () => {
+        it('calls scheduledCheckupService.runCheckupNow and re-renders', async () => {
+            const device = makeDevice({
+                pendingUpdates: makePending({ status: 'available', candidates: [] }),
+            });
+            const { mockLogger, mockTelemetry, mockDeviceService } = makeDeps({
+                getDevice: jest.fn().mockResolvedValue(device),
+            });
+            view = new UpdateReviewViewController({ logger: mockLogger, telemetry: mockTelemetry, deviceService: mockDeviceService });
+
+            await view.render({ deviceId: device.id });
+
+            const vscode = require('vscode');
+            vscode.window.withProgress = jest.fn().mockImplementation(async (_: any, task: any) => { await task(); });
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            vscode.ProgressLocation = { Notification: 15 };
+
+            const renderSpy = jest.spyOn(view, 'render');
+
+            await view.handleMessage({ type: 'runCheckupNow' } as any);
+
+            expect(scheduledCheckupService.runCheckupNow).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'dev-001' }),
+            );
+            expect(renderSpy).toHaveBeenCalledWith({ deviceId: 'dev-001' });
         });
     });
 

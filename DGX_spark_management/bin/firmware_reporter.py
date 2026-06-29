@@ -116,11 +116,12 @@ def main():
     all_errors.extend(ssd_errors)
 
     data = {
-        # TypeScript FirmwareReport fields (flat)
-        "bios_version": bios["version"],
-        "bios_date": bios["release_date"],
-        "gpu_vbios_version": gpu_firmware[0]["vbios_version"] if gpu_firmware else "",
-        "gpu_driver_version": gpu_driver_version,
+        # TypeScript FirmwareReport fields (flat) — None serialises to JSON null so
+        # the TypeScript side can reliably distinguish "not available" from empty string.
+        "bios_version": bios["version"] or None,
+        "bios_date": bios["release_date"] or None,
+        "gpu_vbios_version": (gpu_firmware[0]["vbios_version"] or None) if gpu_firmware else None,
+        "gpu_driver_version": gpu_driver_version or None,
         # task spec nested fields
         "bios": bios,
         "gpu_firmware": gpu_firmware,

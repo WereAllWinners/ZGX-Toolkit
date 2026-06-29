@@ -12,10 +12,35 @@
                     {{totalDevices}} device{{#unless singleDevice}}s{{/unless}}{{#if healthyCount}} &middot; <span class="healthy-count">{{healthyCount}} healthy</span>{{/if}}{{#if degradedCount}} &middot; <span class="degraded-count">{{degradedCount}} degraded</span>{{/if}}
                 </p>
             </div>
-            <button class="btn btn-secondary" id="refreshAllBtn">
-                <i class="codicon codicon-refresh"></i> Refresh All
-            </button>
+            <div class="header-btn-group">
+                <button class="btn btn-secondary" id="updateReportBtn">
+                    <i class="codicon codicon-list-tree"></i> Update Report
+                </button>
+                <button class="btn btn-secondary" id="refreshAllBtn">
+                    <i class="codicon codicon-refresh"></i> Refresh All
+                </button>
+            </div>
         </div>
+    </div>
+
+    <!-- ── Scheduled-checkup settings bar ────────────────────── -->
+    <div class="autocheck-bar">
+        <i class="codicon codicon-bell{{#unless scheduledEnabled}}-dot{{/unless}}"></i>
+        <span class="autocheck-bar-label">Auto-check:</span>
+        <button class="toggle-pill {{#if scheduledEnabled}}toggle-pill-on{{else}}toggle-pill-off{{/if}}"
+                data-action="toggle-scheduled-checkups"
+                title="{{#if scheduledEnabled}}Disable{{else}}Enable{{/if}} automatic scheduled checkups">
+            {{#if scheduledEnabled}}ON{{else}}OFF{{/if}}
+        </button>
+        {{#if scheduledEnabled}}
+        <span class="autocheck-bar-sep">·</span>
+        <label class="autocheck-bar-label" for="checkupIntervalSelect">Interval:</label>
+        <select id="checkupIntervalSelect" class="interval-select">
+            {{#each intervalOptions}}
+            <option value="{{value}}"{{#if selected}} selected{{/if}}>{{label}}</option>
+            {{/each}}
+        </select>
+        {{/if}}
     </div>
 
     {{#if hasDevices}}
@@ -58,6 +83,17 @@
                     <span class="card-label">Last collected</span>
                     <span class="card-value{{#unless hasSnapshot}} muted{{/unless}}">{{#if hasSnapshot}}{{snapshotAge}}{{else}}Never{{/if}}</span>
                 </div>
+                {{#if isSetup}}
+                <div class="card-row">
+                    <span class="card-label">Checked</span>
+                    <span class="card-value">
+                        <span class="muted">{{#if lastCheckedAt}}{{lastCheckedAt}}{{else}}Never{{/if}}</span>
+                        <button class="icon-btn" data-action="run-checkup-now" data-device-id="{{id}}" title="Run checkup now">
+                            <i class="codicon codicon-refresh"></i>
+                        </button>
+                    </span>
+                </div>
+                {{/if}}
                 {{#if hasPendingUpdates}}
                 <div class="card-row">
                     <span class="card-label">Updates</span>
@@ -66,6 +102,32 @@
                             <i class="codicon codicon-arrow-circle-up"></i> {{pendingUpdatesCount}} update(s)
                         </button>
                     </span>
+                </div>
+                {{/if}}
+                {{#if hasAppliedUpdates}}
+                <div class="card-row">
+                    <span class="card-label">Updates</span>
+                    <span class="card-value">
+                        <button class="update-badge update-badge-applied" data-action="open-update-review" data-device-id="{{id}}" title="View applied updates">
+                            <i class="codicon codicon-check-all"></i> Applied
+                        </button>
+                    </span>
+                </div>
+                {{/if}}
+                {{#if hasUpdateError}}
+                <div class="card-row">
+                    <span class="card-label">Updates</span>
+                    <span class="card-value">
+                        <button class="update-badge update-badge-error" data-action="open-update-review" data-device-id="{{id}}" title="View update error">
+                            <i class="codicon codicon-error"></i> Check failed
+                        </button>
+                    </span>
+                </div>
+                {{/if}}
+                {{#if hasNoUpdates}}
+                <div class="card-row">
+                    <span class="card-label">Updates</span>
+                    <span class="card-value muted">Up to date</span>
                 </div>
                 {{/if}}
                 {{#if groupNames}}
@@ -187,6 +249,41 @@
                 <p class="group-empty">No devices in this group yet.</p>
                 {{/if}}
             </div>
+            {{#if hasUpdateData}}
+            <div class="group-updates-summary">
+                <div class="group-updates-header">
+                    <span class="group-updates-title"><i class="codicon codicon-arrow-circle-up"></i> Updates</span>
+                    {{#if groupHasAnyUpdates}}
+                    <span class="group-updates-total">{{groupUpdateCount}} available</span>
+                    {{/if}}
+                </div>
+                {{#each deviceUpdateRows}}
+                <div class="group-update-row">
+                    <span class="group-update-name">{{name}}</span>
+                    <span class="group-update-status">
+                        {{#if noCheckupRun}}
+                        <span class="update-status-text muted">Not checked</span>
+                        {{else if hasUpdates}}
+                        <button class="update-badge update-badge-sm" data-action="open-update-review" data-device-id="{{id}}" title="Review {{updateCount}} update(s) for {{name}}">
+                            <i class="codicon codicon-arrow-up"></i> {{updateCount}}
+                        </button>
+                        {{else if isApplied}}
+                        <span class="update-status-applied"><i class="codicon codicon-check"></i> Applied</span>
+                        {{else if isError}}
+                        <span class="update-status-error"><i class="codicon codicon-error"></i> Failed</span>
+                        {{else if isUpToDate}}
+                        <span class="update-status-ok muted"><i class="codicon codicon-check"></i> Up to date</span>
+                        {{/if}}
+                    </span>
+                    {{#unless noCheckupRun}}
+                    <button class="icon-btn-xs" data-action="open-update-review" data-device-id="{{id}}" title="View update details for {{name}}">
+                        <i class="codicon codicon-arrow-right"></i>
+                    </button>
+                    {{/unless}}
+                </div>
+                {{/each}}
+            </div>
+            {{/if}}
             {{#if deviceCount}}
             <div class="group-card-footer">
                 <button class="btn btn-sm btn-secondary" data-action="group-setup" data-group-id="{{id}}" title="Install manageability collector on all devices in this group">

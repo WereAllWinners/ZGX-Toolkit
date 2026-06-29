@@ -1,0 +1,242 @@
+/*
+ * Copyright © 2026 Jerome Gabryszewski
+ * Licensed under the X11 License. See LICENSE file in the project root for details.
+ */
+
+.container {
+    padding: 20px;
+    max-width: 1100px;
+    margin: 0 auto;
+    color: var(--vscode-foreground);
+    font-family: var(--vscode-font-family);
+    font-size: var(--vscode-font-size);
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+
+.report-header {
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    padding-bottom: 16px;
+}
+
+.report-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.report-title-row h1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 4px;
+    font-size: 1.4em;
+    font-weight: 600;
+}
+
+.report-subtitle {
+    margin: 0;
+    font-size: 0.85em;
+    color: var(--vscode-descriptionForeground);
+}
+
+.report-header-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* ── Summary stat chips ──────────────────────────────────── */
+
+.report-stats {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.stat-chip {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: var(--vscode-badge-background);
+    color: var(--vscode-badge-foreground);
+    font-size: 12px;
+}
+
+.stat-chip-alert {
+    background: color-mix(in srgb, var(--vscode-testing-iconFailed, #f14c4c) 18%, transparent);
+    color: var(--vscode-foreground);
+    border: 1px solid color-mix(in srgb, var(--vscode-testing-iconFailed, #f14c4c) 40%, transparent);
+}
+
+.stat-chip-ok {
+    background: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 18%, transparent);
+    color: var(--vscode-foreground);
+    border: 1px solid color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 40%, transparent);
+}
+
+.stat-value { font-weight: 700; font-size: 14px; }
+.stat-label { color: var(--vscode-descriptionForeground); }
+
+/* ── Buttons ──────────────────────────────────────────────── */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--vscode-font-family);
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    white-space: nowrap;
+}
+
+.btn:hover  { background: var(--vscode-button-hoverBackground); }
+.btn:active { opacity: 0.8; }
+
+.btn.btn-secondary {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+}
+.btn.btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+.btn.btn-sm { padding: 4px 10px; font-size: 11.5px; }
+
+/* ── Report table ─────────────────────────────────────────── */
+
+.report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.report-table thead th {
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--vscode-descriptionForeground);
+    border-bottom: 2px solid var(--vscode-panel-border);
+}
+
+.report-row td {
+    padding: 10px 10px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    vertical-align: top;
+}
+
+.report-row:last-child td { border-bottom: none; }
+
+.report-row.row-has-updates { background: color-mix(in srgb, var(--vscode-button-background) 5%, transparent); }
+
+/* ── Column widths ───────────────────────────────────────── */
+
+.col-device   { min-width: 140px; }
+.col-checked  { width: 100px; white-space: nowrap; }
+.col-status   { width: 140px; }
+.col-packages { }
+.col-action   { width: 80px; text-align: right; }
+
+/* ── Device cell ─────────────────────────────────────────── */
+
+.device-name {
+    display: block;
+    font-weight: 600;
+}
+
+.device-host {
+    display: block;
+    font-size: 11px;
+    font-family: var(--vscode-editor-font-family, monospace);
+    margin-top: 2px;
+}
+
+/* ── Status pills ────────────────────────────────────────── */
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.status-available {
+    background: color-mix(in srgb, var(--vscode-button-background) 30%, transparent);
+    color: var(--vscode-button-foreground);
+    border: 1px solid var(--vscode-button-background);
+}
+
+.status-applied {
+    background: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 20%, transparent);
+    color: var(--vscode-testing-iconPassed, #73c991);
+    border: 1px solid color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 40%, transparent);
+}
+
+.status-error {
+    background: color-mix(in srgb, var(--vscode-testing-iconFailed, #f14c4c) 20%, transparent);
+    color: var(--vscode-testing-iconFailed, #f14c4c);
+    border: 1px solid color-mix(in srgb, var(--vscode-testing-iconFailed, #f14c4c) 40%, transparent);
+}
+
+.status-ok {
+    background: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 10%, transparent);
+    color: var(--vscode-descriptionForeground);
+    border: 1px solid var(--vscode-panel-border);
+}
+
+.status-unchecked {
+    background: transparent;
+    color: var(--vscode-descriptionForeground);
+    border: 1px solid var(--vscode-panel-border);
+    font-weight: 400;
+}
+
+/* ── Package list ────────────────────────────────────────── */
+
+.pkg-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.pkg-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.pkg-name { font-weight: 500; font-family: var(--vscode-editor-font-family, monospace); }
+.pkg-versions { font-size: 11px; }
+.pkg-more { font-size: 11px; font-style: italic; }
+
+/* ── Empty state ─────────────────────────────────────────── */
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.empty-state .codicon { font-size: 3em; display: block; margin-bottom: 12px; }
+
+/* ── Utility ─────────────────────────────────────────────── */
+
+.muted { color: var(--vscode-descriptionForeground); }

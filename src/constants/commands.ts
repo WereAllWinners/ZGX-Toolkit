@@ -54,7 +54,11 @@ export const COMMANDS = {
     // Platform detection
     DETECT_PLATFORM: 'zgxToolkit.detectPlatform',
     // Scheduled checkups (Tier 1)
-    RUN_CHECKUP_NOW: 'zgxToolkit.runCheckupNow',
+    RUN_CHECKUP_NOW:             'zgxToolkit.runCheckupNow',
+    // eslint-disable-next-line @typescript-eslint/naming-convention
+    TOGGLE_SCHEDULED_CHECKUPS:   'zgxToolkit.toggleScheduledCheckups',
+    // eslint-disable-next-line @typescript-eslint/naming-convention
+    CONFIGURE_SCHEDULED_CHECKUPS: 'zgxToolkit.configureScheduledCheckups',
     // Update review panel (Tier 2) — internal, not shown in palette
     // eslint-disable-next-line @typescript-eslint/naming-convention
     OPEN_UPDATE_REVIEW_PANEL: 'zgxToolkit.openUpdateReviewPanel',

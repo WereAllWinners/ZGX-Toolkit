@@ -187,12 +187,6 @@
     gap: 16px;
 }
 
-.apply-note {
-    font-size: 0.82em;
-    color: var(--vscode-descriptionForeground);
-    font-style: italic;
-}
-
 /* Buttons */
 .btn {
     display: inline-flex;
@@ -243,6 +237,36 @@
 
 .update-badge:hover {
     opacity: 0.85;
+}
+
+/* Header actions group */
+.header-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* Status banners */
+.status-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font-size: 0.9em;
+}
+
+.status-banner-applied {
+    background: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 15%, transparent);
+    border: 1px solid var(--vscode-testing-iconPassed, #73c991);
+    color: var(--vscode-foreground);
+}
+
+.status-banner-error {
+    background: color-mix(in srgb, var(--vscode-testing-iconFailed, #f14c4c) 15%, transparent);
+    border: 1px solid var(--vscode-testing-iconFailed, #f14c4c);
+    color: var(--vscode-foreground);
 }
 
 /* Empty state */

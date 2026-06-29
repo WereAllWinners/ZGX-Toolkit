@@ -30,6 +30,7 @@ import { UnpairDevicesViewController } from './groups/unpairDevices/unpairDevice
 import { DeviceInfoViewController } from './devices/info/deviceInfoViewController';
 import { AdminDashboardViewController } from './admin/adminDashboardViewController';
 import { UpdateReviewViewController } from './devices/updates/updateReviewViewController';
+import { UpdateReportViewController } from './admin/updateReport/updateReportViewController';
 
 /**
  * Type for view constructor functions
@@ -93,6 +94,7 @@ export class ViewFactory {
         this.register(DeviceInfoViewController.viewId(), DeviceInfoViewController);
         this.register(AdminDashboardViewController.viewId(), AdminDashboardViewController);
         this.register(UpdateReviewViewController.viewId(), UpdateReviewViewController);
+        this.register(UpdateReportViewController.viewId(), UpdateReportViewController);
         
         this.logger.debug('View registry initialized', { 
             viewCount: this.registry.size 

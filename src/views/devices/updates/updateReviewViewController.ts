@@ -12,6 +12,7 @@ import { DeviceService } from '../../../services/deviceService';
 import { Device } from '../../../types/devices';
 import { ApplyPlan, ApplyResult, PendingUpdatesState } from '../../../types/scheduledUpdates';
 import { updateReconciliationService } from '../../../services/updateReconciliationService';
+import { scheduledCheckupService } from '../../../services/scheduledCheckupService';
 
 export class UpdateReviewViewController extends BaseViewController {
     private deviceService: DeviceService;
@@ -82,6 +83,8 @@ export class UpdateReviewViewController extends BaseViewController {
             candidates:          pending.candidates,
             ansibleExclusions:   pending.ansibleExclusions,
             kernelExclusions:    pending.kernelExclusions,
+            isApplied:           pending.status === 'applied',
+            hasApplyError:       pending.status === 'error',
         };
 
         const html = this.renderTemplate(this.template, templateData);
@@ -99,10 +102,30 @@ export class UpdateReviewViewController extends BaseViewController {
                 }
                 break;
 
+            case 'runCheckupNow':
+                if (this.currentDevice) {
+                    await this.runCheckupFromPanel(this.currentDevice);
+                }
+                break;
+
             case 'goBack':
                 await this.navigateTo('admin/dashboard', {}, 'sidebar');
                 break;
         }
+    }
+
+    // ── Checkup trigger ─────────────────────────────────────────────────────
+
+    private async runCheckupFromPanel(device: Device): Promise<void> {
+        await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: `ZGX Toolkit: Checking updates for ${device.name}…`,
+                cancellable: false,
+            },
+            async () => { await scheduledCheckupService.runCheckupNow(device); },
+        );
+        await this.render({ deviceId: device.id });
     }
 
     // ── Real apply handler ───────────────────────────────────────────────────

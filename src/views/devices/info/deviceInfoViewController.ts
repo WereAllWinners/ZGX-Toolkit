@@ -232,13 +232,23 @@ export class DeviceInfoViewController extends BaseViewController {
             total_memory_gb: Math.round((hw.total_memory_bytes ?? 0) / (1024 ** 3)),
         } : undefined;
 
+        // strOrNA: treats null, undefined, AND empty string as N/A — needed because
+        // older snapshots may have empty strings from the collector before this fix.
+        const strOrNA = (v: any): string => (v && typeof v === 'string' ? v : 'N/A');
+
+        // GPU Driver: prefer the firmware reporter field; fall back to the driver
+        // inventory reporter which queries nvidia-smi separately and is more reliable.
+        const gpuDriverVersion = strOrNA(fw?.gpu_driver_version) !== 'N/A'
+            ? strOrNA(fw?.gpu_driver_version)
+            : strOrNA(drv?.gpu_driver_version);
+
         const firmware = fw ? {
-            uefi_version: fw.bios_version ?? 'N/A',
+            uefi_version: strOrNA(fw.bios_version),
             bmc_version:  'N/A',
             entries: [
-                { component: 'GPU VBIOS', version: fw.gpu_vbios_version ?? 'N/A' },
-                { component: 'GPU Driver', version: fw.gpu_driver_version ?? 'N/A' },
-                { component: 'BIOS Date',  version: fw.bios_date ?? 'N/A' },
+                { component: 'GPU VBIOS', version: strOrNA(fw.gpu_vbios_version) },
+                { component: 'GPU Driver', version: gpuDriverVersion },
+                { component: 'BIOS Date',  version: strOrNA(fw.bios_date) },
             ],
         } : undefined;
 

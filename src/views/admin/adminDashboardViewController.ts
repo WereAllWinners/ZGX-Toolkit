@@ -14,10 +14,11 @@ import { UserGroupService } from '../../services/userGroupService';
 import { AnsibleService } from '../../services/ansibleService';
 import { ManageabilitySnapshot } from '../../types/manageability';
 import { GroupPolicy } from '../../types/userGroup';
-import { PendingUpdatesState } from '../../types/scheduledUpdates';
+import { CheckupResult, PendingUpdatesState } from '../../types/scheduledUpdates';
 import { DeviceInfoViewController } from '../devices/info/deviceInfoViewController';
 import { tailscaleService } from '../../services/tailscaleService';
 import { TailscaleDeviceMetadata } from '../../types/tailscale';
+import { scheduledCheckupService } from '../../services/scheduledCheckupService';
 
 const HEALTH_ICONS: Record<string, string> = {
     healthy:  'codicon-pass-filled',
@@ -112,6 +113,8 @@ export class AdminDashboardViewController extends BaseViewController {
 
         // Build group template data
         const deviceNameMap = new Map(devices.map(d => [d.id, d.name]));
+        const deviceMap     = new Map(devices.map(d => [d.id, d]));
+
         const userGroups = allGroups.map(g => {
             const p = g.policy;
             const hasPolicy = !!(
@@ -121,6 +124,32 @@ export class AdminDashboardViewController extends BaseViewController {
                     p.customPlaybookPath
                 )
             );
+
+            const deviceUpdateRows = g.deviceIds.map(id => {
+                const device  = deviceMap.get(id);
+                const name    = deviceNameMap.get(id) ?? id;
+                if (!device) {
+                    return { id, name, noCheckupRun: true, hasUpdates: false, updateCount: 0, isApplied: false, isError: false, isUpToDate: false };
+                }
+                const pending    = device.metadata?.pendingUpdates as PendingUpdatesState | undefined;
+                const lastCheckup = device.metadata?.lastCheckup   as CheckupResult       | undefined;
+                const hasUpdates  = pending?.status === 'available' && (pending.candidates.length ?? 0) > 0;
+                return {
+                    id,
+                    name,
+                    noCheckupRun: !lastCheckup,
+                    hasUpdates,
+                    updateCount:  hasUpdates ? pending!.candidates.length : 0,
+                    isApplied:    pending?.status === 'applied',
+                    isError:      pending?.status === 'error',
+                    isUpToDate:   pending?.status === 'none',
+                };
+            });
+
+            const groupUpdateCount   = deviceUpdateRows.reduce((s, r) => s + r.updateCount, 0);
+            const groupHasAnyUpdates = groupUpdateCount > 0;
+            const hasUpdateData      = deviceUpdateRows.some(r => !r.noCheckupRun);
+
             return {
                 id:                   g.id,
                 name:                 g.name,
@@ -132,8 +161,25 @@ export class AdminDashboardViewController extends BaseViewController {
                 policyRequired:       p?.requiredPackages?.join(', ') ?? '',
                 policyPinned:         p?.pinnedPackages?.join(', ')   ?? '',
                 policyPlaybook:       p?.customPlaybookPath            ?? '',
+                deviceUpdateRows,
+                groupUpdateCount,
+                groupHasAnyUpdates,
+                hasUpdateData,
             };
         });
+
+        // Scheduled checkup settings for the settings bar
+        const cfg                  = vscode.workspace.getConfiguration('zgxToolkit');
+        const scheduledEnabled     = cfg.get<boolean>('scheduledCheckups.enabled',      false);
+        const scheduledInterval    = cfg.get<number>('scheduledCheckups.intervalHours', 24);
+        const intervalOptions      = [
+            { value: 1,   label: 'Every 1h',   selected: scheduledInterval === 1   },
+            { value: 6,   label: 'Every 6h',   selected: scheduledInterval === 6   },
+            { value: 12,  label: 'Every 12h',  selected: scheduledInterval === 12  },
+            { value: 24,  label: 'Every 24h',  selected: scheduledInterval === 24  },
+            { value: 48,  label: 'Every 48h',  selected: scheduledInterval === 48  },
+            { value: 168, label: 'Every week', selected: scheduledInterval === 168 },
+        ];
 
         const body = this.renderTemplate(this.template, {
             devices:       cardData,
@@ -143,7 +189,10 @@ export class AdminDashboardViewController extends BaseViewController {
             healthyCount:  healthyCount  || undefined,
             degradedCount: degradedCount || undefined,
             userGroups,
-            hasUserGroups: userGroups.length > 0,
+            hasUserGroups:          userGroups.length > 0,
+            scheduledEnabled,
+            scheduledInterval,
+            intervalOptions,
         });
 
         return this.wrapHtml(body, nonce);
@@ -235,6 +284,36 @@ export class AdminDashboardViewController extends BaseViewController {
             case 'openUpdateReview':
                 await this.navigateTo('devices/updates', { deviceId: msg.deviceId }, 'editor');
                 break;
+
+            case 'runCheckupNow':
+                await this.handleRunCheckupNow(msg.deviceId);
+                break;
+
+            case 'openUpdateReport':
+                await this.navigateTo('admin/update-report', undefined, 'editor');
+                break;
+
+            case 'toggleScheduledCheckups': {
+                const config  = vscode.workspace.getConfiguration('zgxToolkit');
+                const current = config.get<boolean>('scheduledCheckups.enabled', false);
+                await config.update('scheduledCheckups.enabled', !current, vscode.ConfigurationTarget.Global);
+                await this.refresh();
+                break;
+            }
+
+            case 'setCheckupInterval': {
+                const hours = msg.hours as number;
+                if (typeof hours === 'number' && hours > 0) {
+                    const config = vscode.workspace.getConfiguration('zgxToolkit');
+                    await config.update('scheduledCheckups.intervalHours', hours, vscode.ConfigurationTarget.Global);
+                    // Also enable scheduling if it was off — selecting an interval implies intent to use it
+                    if (!config.get<boolean>('scheduledCheckups.enabled', false)) {
+                        await config.update('scheduledCheckups.enabled', true, vscode.ConfigurationTarget.Global);
+                    }
+                    await this.refresh();
+                }
+                break;
+            }
         }
     }
 
@@ -1144,6 +1223,27 @@ export class AdminDashboardViewController extends BaseViewController {
         }
     }
 
+    private async handleRunCheckupNow(deviceId: string): Promise<void> {
+        const device = await this.deviceService.getDevice(deviceId);
+        if (!device) { return; }
+        try {
+            await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `ZGX Toolkit: Checking updates for ${device.name}…`,
+                    cancellable: false,
+                },
+                async () => { await scheduledCheckupService.runCheckupNow(device); },
+            );
+        } catch (err) {
+            vscode.window.showErrorMessage(`ZGX Toolkit: Checkup failed for ${device.name}.`);
+            this.logger.error('Admin dashboard: runCheckupNow failed', { device: device.name, err });
+        } finally {
+            this.sendMessageToWebview({ type: 'clearLoading', deviceId });
+            await this.refresh();
+        }
+    }
+
     private getOutputChannel(): vscode.OutputChannel {
         if (!this.outputChannel) {
             this.outputChannel = vscode.window.createOutputChannel('ZGX Toolkit');
@@ -1177,11 +1277,35 @@ export class AdminDashboardViewController extends BaseViewController {
             tailscaleLastSeen,
         };
 
+        // Checkup / update state — available regardless of snapshot presence
+        const lastCheckup = device.metadata?.lastCheckup as CheckupResult | undefined;
+        const lastCheckedAt = lastCheckup?.checkedAt ? this.formatAge(lastCheckup.checkedAt) : null;
+
+        const pending = device.metadata?.pendingUpdates as PendingUpdatesState | undefined;
+        const pendingStatus = pending?.status ?? null;
+        const hasPendingUpdates = pendingStatus === 'available' && (pending?.candidates.length ?? 0) > 0;
+        const pendingUpdatesCount = hasPendingUpdates ? pending!.candidates.length : 0;
+        const hasAppliedUpdates = pendingStatus === 'applied';
+        const hasUpdateError = pendingStatus === 'error';
+        const hasNoUpdates = pendingStatus === 'none';
+        const canOpenUpdateReview = pending !== undefined;
+
+        const checkupBase = {
+            lastCheckedAt,
+            hasPendingUpdates,
+            pendingUpdatesCount,
+            hasAppliedUpdates,
+            hasUpdateError,
+            hasNoUpdates,
+            canOpenUpdateReview,
+        };
+
         const snapshot = device.metadata?.manageabilitySnapshot as ManageabilitySnapshot | undefined;
         if (!snapshot) {
             return {
                 ...base,
                 ...tailscaleBase,
+                ...checkupBase,
                 hasSnapshot:       false,
                 healthStatus:      'none',
                 healthStatusLabel: HEALTH_LABELS['none'],
@@ -1229,14 +1353,10 @@ export class AdminDashboardViewController extends BaseViewController {
             ? Math.round(hw.total_memory_bytes / (1024 ** 3))
             : null;
 
-        const pending = device.metadata?.pendingUpdates as PendingUpdatesState | undefined;
-        const hasPendingUpdates =
-            pending?.status === 'available' && (pending?.candidates.length ?? 0) > 0;
-        const pendingUpdatesCount = hasPendingUpdates ? pending!.candidates.length : 0;
-
         return {
             ...base,
             ...tailscaleBase,
+            ...checkupBase,
             hasSnapshot:       true,
             collectedAt:       snapshot.collectedAt,
             snapshotAge:       this.formatAge(snapshot.collectedAt),
@@ -1247,8 +1367,6 @@ export class AdminDashboardViewController extends BaseViewController {
             gpuSummary,
             unifiedMemory,
             totalMemoryGb,
-            hasPendingUpdates,
-            pendingUpdatesCount,
         };
     }
 

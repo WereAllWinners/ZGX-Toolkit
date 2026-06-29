@@ -11,9 +11,14 @@
                 <p class="header-subtitle">{{deviceName}}</p>
                 <p class="collected-at">Checked {{computedAt}} &middot; via {{source}}</p>
             </div>
-            <button class="btn btn-secondary" id="backBtn">
-                <i class="codicon codicon-arrow-left"></i> Back
-            </button>
+            <div class="header-actions">
+                <button class="btn btn-secondary" id="recheckBtn">
+                    <i class="codicon codicon-refresh"></i> Re-check now
+                </button>
+                <button class="btn btn-secondary" id="backBtn">
+                    <i class="codicon codicon-arrow-left"></i> Back
+                </button>
+            </div>
         </div>
 
         <div class="summary-bar">
@@ -23,6 +28,17 @@
             {{#if kernelCount}} &middot; <span class="summary-held">{{kernelCount}} held by kernel policy</span>{{/if}}
         </div>
     </div>
+
+    {{#if isApplied}}
+    <div class="status-banner status-banner-applied">
+        <i class="codicon codicon-check-all"></i> Updates applied successfully. Re-check to confirm the latest state.
+    </div>
+    {{/if}}
+    {{#if hasApplyError}}
+    <div class="status-banner status-banner-error">
+        <i class="codicon codicon-error"></i> Last apply failed. Review the error and try again or re-check for updated status.
+    </div>
+    {{/if}}
 
     {{#if hasCandidates}}
     <section class="section">
@@ -59,7 +75,6 @@
             <button class="btn btn-primary" id="applyBtn">
                 <i class="codicon codicon-arrow-circle-up"></i> Approve &amp; Apply Selected
             </button>
-            <span class="apply-note">Task 03 enables actual installation. This is a preview stub.</span>
         </div>
     </section>
     {{else}}

@@ -106,9 +106,38 @@
                         if (!deviceId) { return; }
                         vscode.postMessage({ type: 'openUpdateReview', deviceId });
                         break;
+
+                    case 'run-checkup-now':
+                        if (!deviceId) { return; }
+                        setCardLoading(deviceId, true);
+                        vscode.postMessage({ type: 'runCheckupNow', deviceId });
+                        break;
+
+                    case 'toggle-scheduled-checkups':
+                        vscode.postMessage({ type: 'toggleScheduledCheckups' });
+                        break;
                 }
             });
         });
+
+        // Scheduled checkup interval select
+        document.addEventListener('change', function (e) {
+            const target = e.target;
+            if (target && target.id === 'checkupIntervalSelect') {
+                const hours = parseInt(target.value, 10);
+                if (hours > 0) {
+                    vscode.postMessage({ type: 'setCheckupInterval', hours });
+                }
+            }
+        });
+
+        // Update Report button
+        var updateReportBtn = document.getElementById('updateReportBtn');
+        if (updateReportBtn) {
+            updateReportBtn.addEventListener('click', function () {
+                vscode.postMessage({ type: 'openUpdateReport' });
+            });
+        }
 
         // Create Group button
         const createGroupBtn = document.getElementById('createGroupBtn');

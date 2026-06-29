@@ -24,6 +24,12 @@ jest.mock('../../services/updateReconciliationService', () => ({
     },
 }));
 
+jest.mock('../../services/scheduledCheckupService', () => ({
+    scheduledCheckupService: {
+        runCheckupNow: jest.fn().mockResolvedValue(undefined),
+    },
+}));
+
 jest.mock('../../utils/logger', () => ({
     logger: {
         debug: jest.fn(),

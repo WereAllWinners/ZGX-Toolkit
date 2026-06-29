@@ -66,6 +66,9 @@
     }
   ],
   
+  // Use workspace TypeScript to avoid false deprecation warnings from VS Code's built-in TS
+  "typescript.tsdk": "node_modules/typescript/lib",
+
   // Files to automatically add header on creation (when extension is installed)
   "files.associations": {
     "*.ts": "typescript",

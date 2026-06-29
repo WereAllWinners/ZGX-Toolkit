@@ -334,8 +334,22 @@ export async function pollManagedDeviceStatus(
     if (clientStatus?.up) {
         for (const device of managedDevices) {
             const tsMeta = device.metadata!.tailscale as TailscaleDeviceMetadata;
-            const peer = clientStatus.peers.find(p => p.tailnetIp === tsMeta.tailnetIp);
+
+            // Prefer exact IP match; fall back to name match to catch IP rotations.
+            let peer = clientStatus.peers.find(p => p.tailnetIp === tsMeta.tailnetIp);
+            if (!peer) {
+                peer = tailscaleService.matchPeerForDevice(device, clientStatus.peers);
+            }
             if (!peer) { continue; }
+
+            const ipChanged = peer.tailnetIp !== tsMeta.tailnetIp;
+            if (ipChanged) {
+                logger.info('Tailscale: tailnet IP changed for device — updating stored host', {
+                    device:  device.name,
+                    oldIp:   tsMeta.tailnetIp,
+                    newIp:   peer.tailnetIp,
+                });
+            }
 
             const status: TailscaleDeviceStatus = {
                 online:   peer.online,
@@ -343,8 +357,10 @@ export async function pollManagedDeviceStatus(
                 source:   'cli',
                 polledAt,
             };
+            const updatedMeta = { ...tsMeta, tailnetIp: peer.tailnetIp, status };
             await deviceSvc.updateDevice(device.id, {
-                metadata: { ...(device.metadata ?? {}), tailscale: { ...tsMeta, status } },
+                ...(ipChanged ? { host: peer.tailnetIp } : {}),
+                metadata: { ...(device.metadata ?? {}), tailscale: updatedMeta },
             });
         }
         return;
@@ -365,8 +381,27 @@ export async function pollManagedDeviceStatus(
 
     for (const device of managedDevices) {
         const tsMeta = device.metadata!.tailscale as TailscaleDeviceMetadata;
-        const apiDevice = apiDevices.find(d => d.tailnetIp === tsMeta.tailnetIp);
+
+        // Prefer exact IP match; fall back to hostname match to catch IP rotations.
+        let apiDevice = apiDevices.find(d => d.tailnetIp === tsMeta.tailnetIp);
+        if (!apiDevice) {
+            const name = device.name.toLowerCase();
+            const host = device.host.toLowerCase();
+            apiDevice = apiDevices.find(d => {
+                const h = d.hostname.toLowerCase();
+                return h === name || h === host || h.startsWith(name + '.') || h.startsWith(host + '.');
+            });
+        }
         if (!apiDevice) { continue; }
+
+        const ipChanged = apiDevice.tailnetIp !== tsMeta.tailnetIp;
+        if (ipChanged) {
+            logger.info('Tailscale: tailnet IP changed for device (via API) — updating stored host', {
+                device:  device.name,
+                oldIp:   tsMeta.tailnetIp,
+                newIp:   apiDevice.tailnetIp,
+            });
+        }
 
         const status: TailscaleDeviceStatus = {
             online:   apiDevice.online,
@@ -374,8 +409,10 @@ export async function pollManagedDeviceStatus(
             source:   'api',
             polledAt,
         };
+        const updatedMeta = { ...tsMeta, tailnetIp: apiDevice.tailnetIp, status };
         await deviceSvc.updateDevice(device.id, {
-            metadata: { ...(device.metadata ?? {}), tailscale: { ...tsMeta, status } },
+            ...(ipChanged ? { host: apiDevice.tailnetIp } : {}),
+            metadata: { ...(device.metadata ?? {}), tailscale: updatedMeta },
         });
     }
 }

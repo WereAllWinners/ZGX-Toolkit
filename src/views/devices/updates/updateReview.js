@@ -36,6 +36,14 @@
         });
     }
 
+    // Re-check button
+    var recheckBtn = document.getElementById('recheckBtn');
+    if (recheckBtn) {
+        recheckBtn.addEventListener('click', function () {
+            vscode.postMessage({ type: 'runCheckupNow' });
+        });
+    }
+
     // Apply button
     var applyBtn = document.getElementById('applyBtn');
     if (applyBtn) {

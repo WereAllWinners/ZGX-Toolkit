@@ -69,8 +69,91 @@ async function runCheckupNowCommand(): Promise<void> {
     }
 }
 
+async function toggleScheduledCheckupsCommand(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('zgxToolkit');
+    const current = config.get<boolean>('scheduledCheckups.enabled', false);
+    const next = !current;
+    await config.update('scheduledCheckups.enabled', next, vscode.ConfigurationTarget.Global);
+
+    if (next) {
+        const intervalHours = config.get<number>('scheduledCheckups.intervalHours', 24);
+        vscode.window.showInformationMessage(
+            `ZGX Toolkit: Scheduled checkups enabled — running every ${intervalHours}h. ` +
+            `Change the interval in Settings (zgxToolkit.scheduledCheckups.intervalHours).`,
+        );
+    } else {
+        vscode.window.showInformationMessage('ZGX Toolkit: Scheduled checkups disabled.');
+    }
+}
+
+async function configureScheduledCheckupsCommand(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('zgxToolkit');
+    const currentInterval = config.get<number>('scheduledCheckups.intervalHours', 24);
+    const currentEnabled = config.get<boolean>('scheduledCheckups.enabled', false);
+
+    const items: vscode.QuickPickItem[] = [
+        {
+            label: currentEnabled ? '$(check) Disable automatic checkups' : '$(check) Enable automatic checkups',
+            description: currentEnabled ? 'Currently enabled' : 'Currently disabled',
+        },
+        { label: '$(clock) Every hour',        description: '1 hour' },
+        { label: '$(clock) Every 6 hours',     description: '6 hours' },
+        { label: '$(clock) Every 12 hours',    description: '12 hours' },
+        { label: '$(clock) Every 24 hours',    description: '24 hours (default)' },
+        { label: '$(clock) Every 48 hours',    description: '48 hours' },
+        { label: '$(clock) Every week',        description: '168 hours' },
+        { label: '$(gear) Open full settings', description: 'Open VS Code Settings for all checkup options' },
+    ];
+
+    const pick = await vscode.window.showQuickPick(items, {
+        placeHolder: `Scheduled checkups: ${currentEnabled ? 'ON' : 'OFF'}, every ${currentInterval}h`,
+        title: 'ZGX Toolkit: Configure Scheduled Checkups',
+    });
+
+    if (!pick) { return; }
+
+    if (pick.label.includes('Enable') || pick.label.includes('Disable')) {
+        await config.update('scheduledCheckups.enabled', !currentEnabled, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(
+            `ZGX Toolkit: Scheduled checkups ${!currentEnabled ? 'enabled' : 'disabled'}.`,
+        );
+        return;
+    }
+
+    if (pick.label.includes('Open full settings')) {
+        await vscode.commands.executeCommand('workbench.action.openSettings', 'zgxToolkit.scheduledCheckups');
+        return;
+    }
+
+    const intervalOptions = [
+        { label: '$(clock) Every hour',     hours: 1   },
+        { label: '$(clock) Every 6 hours',  hours: 6   },
+        { label: '$(clock) Every 12 hours', hours: 12  },
+        { label: '$(clock) Every 24 hours', hours: 24  },
+        { label: '$(clock) Every 48 hours', hours: 48  },
+        { label: '$(clock) Every week',     hours: 168 },
+    ];
+
+    const hours = intervalOptions.find(o => o.label === pick.label)?.hours;
+    if (hours !== undefined) {
+        await config.update('scheduledCheckups.intervalHours', hours, vscode.ConfigurationTarget.Global);
+        if (!currentEnabled) {
+            await config.update('scheduledCheckups.enabled', true, vscode.ConfigurationTarget.Global);
+            vscode.window.showInformationMessage(
+                `ZGX Toolkit: Scheduled checkups enabled — running every ${hours}h.`,
+            );
+        } else {
+            vscode.window.showInformationMessage(
+                `ZGX Toolkit: Checkup interval set to every ${hours}h.`,
+            );
+        }
+    }
+}
+
 export function registerScheduledCheckupCommands(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.commands.registerCommand(COMMANDS.RUN_CHECKUP_NOW, runCheckupNowCommand),
+        vscode.commands.registerCommand(COMMANDS.TOGGLE_SCHEDULED_CHECKUPS, toggleScheduledCheckupsCommand),
+        vscode.commands.registerCommand(COMMANDS.CONFIGURE_SCHEDULED_CHECKUPS, configureScheduledCheckupsCommand),
     );
 }

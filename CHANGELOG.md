@@ -1,5 +1,110 @@
 # Changelog
 
+## v2.2.2 (2026-06-29)
+
+### Fleet-Wide Update Report Panel
+
+#### New capabilities
+
+- **Update Report panel**: Opens from the "Update Report" button in the Admin
+  Dashboard header. Shows every managed device in a single table with its last
+  checkup time, current update status (available count, Applied, Check failed,
+  Up to date, Not checked), and a preview of the top 5 available packages with
+  current → available version info.
+
+- **Fleet summary stats**: Total devices, checked devices, devices with updates,
+  and total available packages are shown as chips at the top of the report.
+  Devices with pending updates sort to the top automatically.
+
+- **Direct drilldown**: Each device row has a "View →" button that opens its
+  Update Review panel directly for side-by-side comparison or to initiate apply.
+
+- **Refresh and back navigation**: The report has its own Refresh and
+  "← Dashboard" buttons; it stays in the editor panel alongside the dashboard.
+
+---
+
+## v2.2.1 (2026-06-29)
+
+### In-App Scheduled Checkup Controls & Group Update Overview
+
+#### New capabilities
+
+- **Scheduled Checkup Settings Bar**: The Admin Dashboard now has an
+  "Auto-check" bar at the top showing the current enabled/disabled state.
+  Click the ON/OFF pill to toggle scheduling, and pick an interval from
+  the dropdown (1h, 6h, 12h, 24h, 48h, weekly). Selecting an interval
+  automatically enables scheduling. No command palette or VS Code Settings
+  required.
+
+- **Group Update Summary**: Each User Group card now shows a compact update
+  summary section once at least one device in the group has had a checkup
+  run. Each device row shows its update state (available count, Applied,
+  Failed, or Up to date) and a quick-link arrow to its Update Review panel.
+  The section header shows the total number of available updates across
+  the group.
+
+- **Command palette additions**: `ZGX Toolkit: Toggle Scheduled Checkups`
+  and `ZGX Toolkit: Configure Scheduled Checkups` for keyboard-driven access.
+
+#### Installation
+
+```bash
+code --install-extension zgx-toolkit-2.2.1.vsix
+```
+
+---
+
+## v2.2.0 (2026-06-29)
+
+### Scheduled Update Checkup & UI-Driven Apply
+
+This release delivers a complete update management pipeline — from background
+detection through approved apply — all controlled from the Admin Dashboard UI
+without requiring the command palette or terminal.
+
+#### New capabilities
+
+- **Scheduled Checkup Service** (`src/services/scheduledCheckupService.ts`):
+  Background polling runs `apt list --upgradable` on each device on a
+  configurable interval. Results are stored as `lastCheckup` and
+  `pendingUpdates` device metadata and survive extension restarts.
+
+- **Update Reconciliation Gate** (`src/services/updateReconciliationService.ts`):
+  Filters raw checkup results against Ansible pinned versions and
+  `apt-mark hold` device holds, producing a curated candidate list.
+  A TOCTOU re-validation re-runs both filters at apply time.
+
+- **Scoped Package Apply**: Approved packages are applied via
+  `apt-get install --only-upgrade -y <pkgs>` (never a blanket upgrade).
+  Supports `spark_updatectl` path for DGX-managed devices, sudo password
+  retry, and full status tracking (`available → applying → applied/error`).
+
+- **Full UI Controls in Admin Dashboard**: Every feature is now operable
+  from the device card — no command palette or terminal required:
+  - "Checked Xh ago / Never" row with inline refresh icon button
+  - Four mutually exclusive update state badges: available count, Applied
+    (green), Check failed (red), Up to date
+  - All badge buttons open the Update Review panel directly
+
+- **Update Review Panel enhancements**:
+  - "Re-check now" button always visible in the panel header
+  - Status banners for `applied` (green) and `error` (red) states
+  - Stale "preview stub" note removed; real apply is wired end-to-end
+
+#### Test coverage
+
+Added 80+ unit tests across services and views.
+Service tests: 583 passing. View tests: 499 passing.
+
+#### Installation
+
+```bash
+code --install-extension zgx-toolkit-2.2.0.vsix
+```
+
+---
+
 ## v2.0.0 (2026-06-27)
 
 ### Enterprise Manageability Engine — new in this fork

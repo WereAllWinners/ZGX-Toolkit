@@ -1,0 +1,131 @@
+<!--
+  Copyright © 2026 Jerome Gabryszewski
+  Licensed under the X11 License. See LICENSE file in the project root for details.
+-->
+
+<div class="container">
+    <div class="report-header">
+        <div class="report-title-row">
+            <div>
+                <h1><i class="codicon codicon-list-tree"></i> Update Report</h1>
+                <p class="report-subtitle">Generated {{generatedAt}}</p>
+            </div>
+            <div class="report-header-actions">
+                <button class="btn btn-secondary" id="refreshBtn">
+                    <i class="codicon codicon-refresh"></i> Refresh
+                </button>
+                <button class="btn btn-secondary" id="backBtn">
+                    <i class="codicon codicon-arrow-left"></i> Dashboard
+                </button>
+            </div>
+        </div>
+
+        <div class="report-stats">
+            <div class="stat-chip">
+                <span class="stat-value">{{totalDevices}}</span>
+                <span class="stat-label">device{{#unless singleDevice}}s{{/unless}}</span>
+            </div>
+            <div class="stat-chip">
+                <span class="stat-value">{{checkedDevices}}</span>
+                <span class="stat-label">checked</span>
+            </div>
+            {{#if devicesWithUpdates}}
+            <div class="stat-chip stat-chip-alert">
+                <span class="stat-value">{{devicesWithUpdates}}</span>
+                <span class="stat-label">with updates</span>
+            </div>
+            <div class="stat-chip stat-chip-alert">
+                <span class="stat-value">{{totalAvailable}}</span>
+                <span class="stat-label">package{{#unless singleUpdate}}s{{/unless}} available</span>
+            </div>
+            {{else}}
+            <div class="stat-chip stat-chip-ok">
+                <span class="stat-value"><i class="codicon codicon-check"></i></span>
+                <span class="stat-label">all up to date</span>
+            </div>
+            {{/if}}
+        </div>
+    </div>
+
+    {{#if hasRows}}
+    <table class="report-table">
+        <thead>
+            <tr>
+                <th>Device</th>
+                <th>Last Checked</th>
+                <th>Status</th>
+                <th>Packages</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#each rows}}
+            <tr class="report-row{{#if hasUpdates}} row-has-updates{{/if}}{{#if isError}} row-error{{/if}}">
+                <td class="col-device">
+                    <span class="device-name">{{name}}</span>
+                    <span class="device-host muted">{{host}}</span>
+                </td>
+                <td class="col-checked">
+                    {{#if lastCheckedAt}}
+                    <span>{{lastCheckedAt}}</span>
+                    {{else}}
+                    <span class="muted">Never</span>
+                    {{/if}}
+                </td>
+                <td class="col-status">
+                    {{#if unchecked}}
+                    <span class="status-pill status-unchecked">Not checked</span>
+                    {{else if hasUpdates}}
+                    <span class="status-pill status-available">
+                        <i class="codicon codicon-arrow-up"></i> {{updateCount}} available
+                    </span>
+                    {{else if isApplied}}
+                    <span class="status-pill status-applied">
+                        <i class="codicon codicon-check-all"></i> Applied
+                    </span>
+                    {{else if isError}}
+                    <span class="status-pill status-error">
+                        <i class="codicon codicon-error"></i> Check failed
+                    </span>
+                    {{else if isUpToDate}}
+                    <span class="status-pill status-ok">
+                        <i class="codicon codicon-check"></i> Up to date
+                    </span>
+                    {{/if}}
+                </td>
+                <td class="col-packages">
+                    {{#if hasUpdates}}
+                    <ul class="pkg-list">
+                        {{#each topUpdates}}
+                        <li>
+                            <span class="pkg-name">{{package}}</span>
+                            <span class="pkg-versions muted">{{currentVersion}} → {{availableVersion}}</span>
+                        </li>
+                        {{/each}}
+                        {{#if moreCount}}
+                        <li class="pkg-more muted">+ {{moreCount}} more…</li>
+                        {{/if}}
+                    </ul>
+                    {{else}}
+                    <span class="muted">—</span>
+                    {{/if}}
+                </td>
+                <td class="col-action">
+                    {{#unless unchecked}}
+                    <button class="btn btn-sm btn-secondary" data-action="open-update-review" data-device-id="{{id}}" title="Open Update Review for {{name}}">
+                        View <i class="codicon codicon-arrow-right"></i>
+                    </button>
+                    {{/unless}}
+                </td>
+            </tr>
+            {{/each}}
+        </tbody>
+    </table>
+    {{else}}
+    <div class="empty-state">
+        <i class="codicon codicon-device-desktop"></i>
+        <p>No devices found.</p>
+        <p class="muted">Add and set up devices in the ZGX Device Manager first.</p>
+    </div>
+    {{/if}}
+</div>

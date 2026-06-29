@@ -68,6 +68,43 @@ export interface PendingUpdatesState {
     ansibleExclusions: ExcludedUpdate[];
     /** Updates excluded because the package is held on the device (kernel or apt-mark). */
     kernelExclusions: ExcludedUpdate[];
-    status: 'available' | 'none';
+    status: 'available' | 'none' | 'applying' | 'applied' | 'error';
+}
+
+// ---------------------------------------------------------------------------
+// Task 03: Apply plan and result types
+// ---------------------------------------------------------------------------
+
+/** Which subsystem will execute the scoped apply. */
+export type ApplyProvider = 'apt' | 'dnf' | 'zypper' | 'spark_updatectl' | 'none';
+
+/** A selected package dropped during TOCTOU re-validation. */
+export interface SkippedUpdate {
+    package: string;
+    reason: 'now-pinned' | 'now-held' | 'no-longer-available';
+}
+
+/** Computed apply plan — TOCTOU-safe snapshot ready for user confirmation. */
+export interface ApplyPlan {
+    provider: ApplyProvider;
+    /** Packages that passed re-validation and will be applied. */
+    toApply: string[];
+    /** Packages selected but dropped during re-validation. */
+    skipped: SkippedUpdate[];
+    /** Extra packages the PM would pull in as dependencies beyond toApply. */
+    additionalChanges: string[];
+    /** True when DGX-managed but spark_updatectl absent; apply falls back to native PM. */
+    dgxControllerAbsent: boolean;
+}
+
+/** Result returned by executeApplyPlan. */
+export interface ApplyResult {
+    provider: ApplyProvider;
+    applied: string[];
+    skipped: SkippedUpdate[];
+    success: boolean;
+    /** Caller should prompt for sudo password and retry when true. */
+    requiresPassword?: boolean;
+    note?: string;
 }
 

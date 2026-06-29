@@ -12,6 +12,24 @@ import { PendingUpdatesState } from '../../types/scheduledUpdates';
 
 jest.mock('vscode');
 
+jest.mock('../../services/updateReconciliationService', () => ({
+    updateReconciliationService: {
+        buildApplyPlan: jest.fn().mockResolvedValue({
+            provider: 'apt',
+            toApply: ['curl'],
+            skipped: [],
+            additionalChanges: [],
+            dgxControllerAbsent: false,
+        }),
+        executeApplyPlan: jest.fn().mockResolvedValue({
+            provider: 'apt',
+            applied: ['curl'],
+            skipped: [],
+            success: true,
+        }),
+    },
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -314,11 +332,11 @@ describe('UpdateReviewViewController', () => {
     });
 
     // -------------------------------------------------------------------------
-    // handleMessage() — apply-selected stub
+    // handleMessage() — apply-selected (real handler, Task 03)
     // -------------------------------------------------------------------------
 
     describe('handleMessage() — apply-selected', () => {
-        it('calls vscode.window.showInformationMessage for selected packages', async () => {
+        it('triggers the confirmation modal for selected packages', async () => {
             const device = makeDevice({
                 pendingUpdates: makePending({
                     status: 'available',
@@ -332,18 +350,25 @@ describe('UpdateReviewViewController', () => {
             });
             view = new UpdateReviewViewController({ logger: mockLogger, telemetry: mockTelemetry, deviceService: mockDeviceService });
 
-            // Populate currentDevice by rendering first
             await view.render({ deviceId: device.id });
+
+            const vscode = require('vscode');
+            vscode.window.showWarningMessage = jest.fn().mockResolvedValue('Apply updates');
+            vscode.window.withProgress = jest.fn().mockImplementation(async (_: any, task: any) => { await task(); });
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            vscode.ProgressLocation = { Notification: 15 };
 
             await view.handleMessage({ type: 'apply-selected', packages: ['curl'] } as any);
 
-            const vscode = require('vscode');
-            expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-                expect.stringContaining('Preview')
+            // Real handler shows a confirmation modal first
+            expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+                expect.stringContaining('curl'),
+                { modal: true },
+                'Apply updates',
             );
         });
 
-        it('stub does not invoke any package manager method', async () => {
+        it('does not expose any package manager method on the controller instance', async () => {
             const device = makeDevice({
                 pendingUpdates: makePending({
                     status: 'available',

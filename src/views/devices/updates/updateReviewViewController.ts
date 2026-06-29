@@ -10,7 +10,8 @@ import { ITelemetryService } from '../../../types/telemetry';
 import { Message } from '../../../types/messages';
 import { DeviceService } from '../../../services/deviceService';
 import { Device } from '../../../types/devices';
-import { PendingUpdatesState } from '../../../types/scheduledUpdates';
+import { ApplyPlan, ApplyResult, PendingUpdatesState } from '../../../types/scheduledUpdates';
+import { updateReconciliationService } from '../../../services/updateReconciliationService';
 
 export class UpdateReviewViewController extends BaseViewController {
     private deviceService: DeviceService;
@@ -94,7 +95,7 @@ export class UpdateReviewViewController extends BaseViewController {
         switch (msg.type) {
             case 'apply-selected':
                 if (this.currentDevice) {
-                    await this.applySelectedStub(this.currentDevice, msg.packages ?? []);
+                    await this.applySelected(this.currentDevice, msg.packages ?? []);
                 }
                 break;
 
@@ -104,18 +105,99 @@ export class UpdateReviewViewController extends BaseViewController {
         }
     }
 
-    // ── Stub — replaced in Task 03 ──────────────────────────────────────────
+    // ── Real apply handler ───────────────────────────────────────────────────
 
-    private async applySelectedStub(device: Device, packages: string[]): Promise<void> {
-        this.logger.info('[STUB] Approve & Apply requested', { device: device.name, packages });
+    private async applySelected(device: Device, packages: string[]): Promise<void> {
         if (packages.length === 0) {
             vscode.window.showWarningMessage('ZGX Toolkit: No packages selected.');
             return;
         }
-        vscode.window.showInformationMessage(
-            `ZGX Toolkit (Preview): Would apply ${packages.length} update(s) to ${device.name}: ` +
-            `${packages.join(', ')}. Actual applying is enabled in a later step.`,
+
+        // TOCTOU re-validation: re-run both filters before showing confirmation
+        const plan = await updateReconciliationService.buildApplyPlan(device, packages);
+
+        if (plan.toApply.length === 0) {
+            const reasons = plan.skipped.map(s => `${s.package} (${s.reason})`).join(', ');
+            vscode.window.showInformationMessage(
+                `ZGX Toolkit: All selected packages were dropped during re-validation: ${reasons}`,
+            );
+            return;
+        }
+
+        // Build confirmation modal content
+        const lines: string[] = [
+            `Apply ${plan.toApply.length} update(s) to ${device.name} via ${plan.provider}?`,
+            '',
+            ...plan.toApply,
+        ];
+        if (plan.additionalChanges.length > 0) {
+            lines.push('', `Also pulls in: ${plan.additionalChanges.join(', ')}`);
+        }
+        if (plan.skipped.length > 0) {
+            lines.push(
+                '',
+                `Dropped since last checkup: ${plan.skipped.map(s => `${s.package} (${s.reason})`).join(', ')}`,
+            );
+        }
+        if (plan.dgxControllerAbsent) {
+            lines.push('', 'Note: spark_updatectl is not present; applying via the native package manager.');
+        }
+        lines.push('', 'This changes the device and may require a reboot.');
+
+        const confirm = await vscode.window.showWarningMessage(
+            lines.join('\n'),
+            { modal: true },
+            'Apply updates',
         );
+        if (confirm !== 'Apply updates') { return; }
+
+        // First attempt (no password)
+        let result = await this.executeWithProgress(device, plan);
+
+        // Retry with password if required
+        if (result.requiresPassword) {
+            const password = await vscode.window.showInputBox({
+                prompt: `Sudo password for ${device.name}`,
+                password: true,
+                ignoreFocusOut: true,
+            });
+            if (!password) { return; }
+            result = await this.executeWithProgress(device, plan, password);
+        }
+
+        if (result.success) {
+            vscode.window.showInformationMessage(
+                `ZGX Toolkit: Applied ${result.applied.length} update(s) to ${device.name}.`,
+            );
+        } else {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Apply failed for ${device.name}: ${result.note ?? 'Unknown error'}`,
+            );
+        }
+
+        // Refresh panel to reflect new status
+        await this.render({ deviceId: device.id });
+    }
+
+    private async executeWithProgress(
+        device: Device,
+        plan: ApplyPlan,
+        sudoPassword?: string,
+    ): Promise<ApplyResult> {
+        let result!: ApplyResult;
+        await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: `Applying updates to ${device.name}…`,
+                cancellable: false,
+            },
+            async () => {
+                result = await updateReconciliationService.executeApplyPlan(
+                    device, plan, sudoPassword,
+                );
+            },
+        );
+        return result;
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

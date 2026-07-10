@@ -1066,6 +1066,105 @@ def cmd_update_availability():
 
 
 # ---------------------------------------------------------------------------
+# Firmware update availability (fwupdmgr + apt firmware packages)
+# ---------------------------------------------------------------------------
+
+_APT_FW_PATTERNS = (
+    "linux-firmware", "firmware-", "nvidia-firmware",
+    "-bios", "-uefi", "intel-microcode", "amd64-microcode",
+    "nvidia-vbios", "dgx-bios", "amd-ucode",
+)
+
+
+def cmd_firmware_updates():
+    all_updates = []
+    all_errors = []
+
+    # ── 1. fwupdmgr LVFS updates ──────────────────────────────────────────────
+    if shutil.which("fwupdmgr"):
+        try:
+            r = subprocess.run(
+                ["fwupdmgr", "get-updates", "--json"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode in (0, 2) and r.stdout.strip():
+                data = json.loads(r.stdout)
+                for dev in data.get("Devices", []):
+                    flags = dev.get("Flags", [])
+                    needs_reboot = "require-ac" in flags or "needs-reboot" in flags
+                    for rel in dev.get("Releases", []):
+                        all_updates.append({
+                            "package": dev.get("DeviceId", dev.get("Name", "unknown")),
+                            "device_name": dev.get("Name", ""),
+                            "current_version": dev.get("Version", ""),
+                            "available_version": rel.get("Version", ""),
+                            "source": "fwupd",
+                            "requires_reboot": needs_reboot,
+                            "summary": rel.get("Summary", ""),
+                        })
+            elif r.returncode not in (0, 2):
+                all_errors.append({
+                    "code": "fwupd_error",
+                    "message": f"fwupdmgr exited {r.returncode}: {r.stderr.strip()[:200]}",
+                })
+        except subprocess.TimeoutExpired:
+            all_errors.append({"code": "fwupd_timeout", "message": "fwupdmgr get-updates timed out"})
+        except Exception as exc:
+            all_errors.append({"code": "fwupd_exception", "message": str(exc)})
+
+    # ── 2. apt firmware packages ───────────────────────────────────────────────
+    if shutil.which("apt"):
+        existing = {u["package"] for u in all_updates}
+        try:
+            r = subprocess.run(
+                ["apt", "list", "--upgradable"],
+                capture_output=True, text=True, timeout=60,
+                env={**os.environ, "LANG": "C", "LC_ALL": "C"},
+            )
+            for line in r.stdout.splitlines():
+                if line.startswith("Listing") or "/" not in line:
+                    continue
+                try:
+                    parts = line.split()
+                    pkg = parts[0].split("/")[0]
+                except Exception:
+                    continue
+                if not any(pat in pkg.lower() for pat in _APT_FW_PATTERNS):
+                    continue
+                if pkg in existing:
+                    continue
+                avail = parts[1] if len(parts) > 1 else ""
+                current = ""
+                if "[upgradable from:" in line:
+                    current = line.split("[upgradable from:")[-1].rstrip("]").strip()
+                all_updates.append({
+                    "package": pkg,
+                    "device_name": pkg,
+                    "current_version": current,
+                    "available_version": avail,
+                    "source": "apt-firmware",
+                    "requires_reboot": True,
+                    "summary": f"Firmware package: {pkg}",
+                })
+                existing.add(pkg)
+        except Exception as exc:
+            all_errors.append({"code": "apt_firmware_error", "message": str(exc)})
+
+    if any(u["source"] == "fwupd" for u in all_updates):
+        src = "fwupd"
+    elif all_updates:
+        src = "apt-firmware"
+    else:
+        src = "unavailable"
+
+    result = envelope("firmware-updates", {"source": src, "updates": all_updates})
+    if all_errors:
+        result["status"] = "partial" if all_updates else "error"
+        result["errors"] = all_errors
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1080,6 +1179,7 @@ SUBCOMMANDS = {
     "updates":             cmd_updates,
     "platform-profile":    cmd_platform_profile,
     "update-availability": cmd_update_availability,
+    "firmware-updates":    cmd_firmware_updates,
 }
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@
  */
 
 /** Which read-only source produced the update list. */
-export type UpdateSource = 'apt' | 'dnf' | 'zypper' | 'unavailable';
+export type UpdateSource = 'apt' | 'dnf' | 'zypper' | 'fwupd' | 'apt-firmware' | 'unavailable';
 
 /** A single available update as reported by the read-only query. */
 export interface AvailableUpdate {
@@ -30,6 +30,21 @@ export interface CheckupResult {
     status: 'ok' | 'partial' | 'error';
     /** Optional human-readable note (e.g. query error summary). */
     note?: string;
+    /** Available firmware/BIOS updates from fwupdmgr / apt firmware packages. */
+    availableFirmwareUpdates?: FirmwareAvailableUpdate[];
+    firmwareSource?: UpdateSource;
+    firmwareStatus?: 'ok' | 'unavailable' | 'error';
+}
+
+/** A single firmware/BIOS update as reported by fwupdmgr or apt firmware scan. */
+export interface FirmwareAvailableUpdate {
+    package: string;
+    deviceLabel: string;
+    currentVersion: string;
+    availableVersion: string;
+    source: 'fwupd' | 'apt-firmware';
+    requiresReboot: boolean;
+    summary?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,14 +77,33 @@ export interface PendingUpdatesState {
     /** ISO 8601 timestamp when reconciliation ran. */
     computedAt: string;
     source: UpdateSource;
-    /** Updates that passed all filters and can be approved. */
+    /** Package updates that passed all filters and can be approved. */
     candidates: UpdateCandidate[];
     /** Updates excluded because the Ansible policy pins the package. */
     ansibleExclusions: ExcludedUpdate[];
     /** Updates excluded because the package is held on the device (kernel or apt-mark). */
     kernelExclusions: ExcludedUpdate[];
     status: 'available' | 'none' | 'applying' | 'applied' | 'error';
+    /** Firmware/BIOS candidates that passed the Ansible pinning filter. */
+    firmwareCandidates?: FirmwareCandidate[];
+    /** Firmware blocked by Ansible pinned_packages policy. */
+    firmwareExclusions?: ExcludedUpdate[];
+    firmwareStatus?: 'available' | 'none' | 'applying' | 'applied' | 'error';
+    firmwareSource?: UpdateSource;
 }
+
+/** A firmware/BIOS update that passed all policy filters and can be approved. */
+export interface FirmwareCandidate {
+    package: string;
+    currentVersion: string;
+    availableVersion: string;
+    source: 'fwupd' | 'apt-firmware';
+    requiresReboot: boolean;
+    deviceLabel: string;
+}
+
+/** Scope of an apply operation — packages only, firmware only, or both. */
+export type ApplyScope = 'packages' | 'firmware' | 'all';
 
 // ---------------------------------------------------------------------------
 // Task 03: Apply plan and result types
@@ -95,6 +129,14 @@ export interface ApplyPlan {
     additionalChanges: string[];
     /** True when DGX-managed but spark_updatectl absent; apply falls back to native PM. */
     dgxControllerAbsent: boolean;
+    /** Scope of this plan. */
+    scope?: ApplyScope;
+    /** Firmware candidates that will be applied. */
+    toApplyFirmware?: FirmwareCandidate[];
+    /** Provider for firmware execution. */
+    firmwareProvider?: 'fwupd' | 'apt' | 'none';
+    /** True when any firmware candidate in toApplyFirmware requires a reboot. */
+    firmwareRequiresReboot?: boolean;
 }
 
 /** Result returned by executeApplyPlan. */
@@ -106,5 +148,7 @@ export interface ApplyResult {
     /** Caller should prompt for sudo password and retry when true. */
     requiresPassword?: boolean;
     note?: string;
+    firmwareApplied?: string[];
+    firmwareSuccess?: boolean;
 }
 

@@ -1,5 +1,46 @@
 # Changelog
 
+## v2.3.0 (2026-06-29)
+
+### Firmware / BIOS Update Integration
+
+#### New capabilities
+
+- **Firmware update detection**: Scheduled checkups now query firmware update availability in parallel with package updates. On GB10/DGX Spark systems, NVIDIA-delivered BIOS and firmware packages (matched by name patterns: `linux-firmware`, `firmware-*`, `nvidia-firmware`, `*-bios`, `*-uefi`, `intel-microcode`, `amd64-microcode`, etc.) are detected via `apt list --upgradable`. On all other Linux devices, `fwupdmgr get-updates --json` queries the Linux Vendor Firmware Service (LVFS).
+
+- **Dual-source firmware detection** (`zgx-collector firmware-updates`): A new `cmd_firmware_updates` subcommand queries both fwupdmgr and apt firmware packages in a single call, deduplicates by package name (fwupd entry takes precedence), and returns a unified list with source attribution.
+
+- **Separate firmware section in Update Review**: The Update Review panel now has two independent sections — Package Updates and Firmware / BIOS Updates — each with its own checkbox-based selection, apply button, and status banner. An "Apply All Updates" button appears when both sections have available items.
+
+- **Independent apply scopes** (`ApplyScope: 'packages' | 'firmware' | 'all'`): Users can apply package updates only, firmware updates only, or both in a single operation. TOCTOU re-validation runs fresh queries for both packages and firmware before building the apply plan.
+
+- **Firmware Ansible policy guard**: The same `pinnedPackages` map from the YAML inventory applies to firmware packages by name. Pinned firmware appears in a new "Held by Ansible Policy (Firmware)" exclusions section. Kernel/device holds do NOT apply to firmware.
+
+- **Reboot warning**: Any firmware apply that includes updates with `requires_reboot: true` shows a modal warning before the user confirms.
+
+- **Admin Dashboard firmware badges**: Device cards show amber firmware update badges (`N firmware update(s)`) and applied state badges independently from package badges. Group cards have a new "Apply Firmware" button that applies firmware across all group devices in parallel.
+
+- **Soft failure model**: Firmware check failure never blocks the package checkup. Firmware apply failure does not roll back package apply success.
+
+#### Files changed
+
+- `DGX_spark_management/bin/firmware_update_reporter.py` — new; dual-source firmware detection script
+- `resources/zgx-collector` — added `cmd_firmware_updates` subcommand
+- `src/types/manageability.ts` — added `FirmwareUpdateAvailabilityData` and `firmware_update_availability` tool key
+- `src/types/scheduledUpdates.ts` — extended `UpdateSource`, `PendingUpdatesState`, `ApplyPlan`, `ApplyResult`; added `FirmwareCandidate`, `ApplyScope`
+- `src/services/scheduledCheckupService.ts` — parallel firmware + package checkup via `Promise.all()`
+- `src/services/updateReconciliationService.ts` — firmware reconciliation, apply execution, persist helpers
+- `src/views/devices/updates/updateReviewViewController.ts` — firmware template data, `applyScoped()` handler
+- `src/views/devices/updates/updateReview.html` — firmware section, firmware exclusions section, apply-all bar
+- `src/views/devices/updates/updateReview.js` — firmware select-all, apply firmware, apply-all handlers
+- `src/views/devices/updates/updateReview.css` — firmware section, warning banner, source tag, apply-all bar styles
+- `src/views/admin/adminDashboardViewController.ts` — firmware card data fields, `handleGroupApplyFirmware()`
+- `src/views/admin/adminDashboard.html` — firmware badge rows on device cards, Apply Firmware button on group cards
+- `src/views/admin/adminDashboard.js` — `group-apply-firmware` action dispatch
+- `src/views/admin/adminDashboard.css` — `.update-badge-firmware`, `.btn-firmware` styles
+
+---
+
 ## v2.2.2 (2026-06-29)
 
 ### Fleet-Wide Update Report Panel

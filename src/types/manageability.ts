@@ -174,7 +174,7 @@ export interface ManageabilitySnapshot {
 /** Raw data shape from the zgx-collector update-availability envelope. Fields are
  *  snake_case to match the Python JSON output; mapped to camelCase in the service. */
 export interface UpdateAvailabilityData {
-    source: 'apt' | 'dnf' | 'zypper' | 'unavailable';
+    source: 'apt' | 'dnf' | 'zypper' | 'fwupd' | 'apt-firmware' | 'unavailable';
     updates: Array<{
         // eslint-disable-next-line @typescript-eslint/naming-convention
         package: string;
@@ -182,6 +182,25 @@ export interface UpdateAvailabilityData {
         current_version: string;
         // eslint-disable-next-line @typescript-eslint/naming-convention
         available_version: string;
+    }>;
+}
+
+/** Raw data shape from the zgx-collector firmware-updates envelope. */
+export interface FirmwareUpdateAvailabilityData {
+    source: 'fwupd' | 'apt-firmware' | 'unavailable';
+    updates: Array<{
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        package: string;
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        device_name: string;
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        current_version: string;
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        available_version: string;
+        source: string;
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        requires_reboot: boolean;
+        summary?: string;
     }>;
 }
 
@@ -197,6 +216,8 @@ export const DGX_TOOL_COMMANDS = {
     spark_updatectl:             'zgx-collector updates',
     platform_profile:            'zgx-collector platform-profile',
     update_availability:         'zgx-collector update-availability',
+    // eslint-disable-next-line @typescript-eslint/naming-convention
+    firmware_update_availability: 'zgx-collector firmware-updates',
 } as const;
 
 export type DGXToolKey = keyof typeof DGX_TOOL_COMMANDS;

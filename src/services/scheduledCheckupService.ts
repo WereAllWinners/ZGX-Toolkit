@@ -8,9 +8,10 @@ import { Device } from '../types/devices';
 import {
     AvailableUpdate,
     CheckupResult,
+    FirmwareAvailableUpdate,
     UpdateSource,
 } from '../types/scheduledUpdates';
-import { UpdateAvailabilityData } from '../types/manageability';
+import { FirmwareUpdateAvailabilityData, UpdateAvailabilityData } from '../types/manageability';
 import { logger } from '../utils/logger';
 import { manageabilityService } from './manageabilityService';
 import { platformProfileService } from './platformProfileService';
@@ -64,16 +65,26 @@ export class ScheduledCheckupService {
             });
         }
 
-        const checkupResult = await this.runUpdateAvailability(device);
+        const [checkupResult, firmwareResult] = await Promise.all([
+            this.runUpdateAvailability(device),
+            this.runFirmwareUpdateAvailability(device),
+        ]);
+
+        const mergedCheckup: CheckupResult = {
+            ...checkupResult,
+            availableFirmwareUpdates: firmwareResult.updates,
+            firmwareSource: firmwareResult.source,
+            firmwareStatus: firmwareResult.status,
+        };
 
         // Snapshot the device metadata after the checkup result so the reconciler
         // can read lastCheckup.availableUpdates from the same device reference.
         const deviceWithCheckup = {
             ...device,
-            metadata: { ...device.metadata, lastCheckup: checkupResult },
+            metadata: { ...device.metadata, lastCheckup: mergedCheckup },
         };
 
-        const { candidates, ansibleExclusions, kernelExclusions } =
+        const { candidates, ansibleExclusions, kernelExclusions, firmwareCandidates, firmwareExclusions } =
             await updateReconciliationService.reconcile(deviceWithCheckup);
 
         const pendingUpdates: PendingUpdatesState =
@@ -82,10 +93,13 @@ export class ScheduledCheckupService {
                 candidates,
                 ansibleExclusions,
                 kernelExclusions,
+                firmwareCandidates,
+                firmwareExclusions,
+                firmwareResult.source,
             );
 
         await deviceService.updateDevice(device.id, {
-            metadata: { ...device.metadata, lastCheckup: checkupResult, pendingUpdates },
+            metadata: { ...device.metadata, lastCheckup: mergedCheckup, pendingUpdates },
         });
 
         logger.info('Checkup complete', {
@@ -95,9 +109,10 @@ export class ScheduledCheckupService {
             candidateCount: candidates.length,
             ansibleExcluded: ansibleExclusions.length,
             kernelExcluded: kernelExclusions.length,
+            firmwareCandidates: firmwareCandidates.length,
         });
 
-        return checkupResult;
+        return mergedCheckup;
     }
 
     private isEnabled(): boolean {
@@ -140,6 +155,49 @@ export class ScheduledCheckupService {
                     error: err instanceof Error ? err.message : String(err),
                 });
             }
+        }
+    }
+
+    private async runFirmwareUpdateAvailability(device: Device): Promise<{
+        updates: FirmwareAvailableUpdate[];
+        source: UpdateSource;
+        status: 'ok' | 'unavailable' | 'error';
+    }> {
+        try {
+            const result = await manageabilityService.runTool<FirmwareUpdateAvailabilityData>(
+                device,
+                'firmware_update_availability',
+            );
+
+            if (!result.success || !result.envelope) {
+                return { updates: [], source: 'unavailable', status: 'unavailable' };
+            }
+
+            const data = result.envelope.data;
+            const src = (data.source ?? 'unavailable') as UpdateSource;
+            const updates: FirmwareAvailableUpdate[] = (data.updates ?? []).map(u => ({
+                package: u.package,
+                deviceLabel: u.device_name ?? u.package,
+                currentVersion: u.current_version,
+                availableVersion: u.available_version,
+                source: (u.source === 'fwupd' ? 'fwupd' : 'apt-firmware') as 'fwupd' | 'apt-firmware',
+                requiresReboot: !!u.requires_reboot,
+                summary: u.summary,
+            }));
+
+            const envelopeStatus = result.envelope.status;
+            const status: 'ok' | 'unavailable' | 'error' =
+                envelopeStatus === 'ok' ? 'ok'
+                : envelopeStatus === 'partial' ? 'ok'
+                : 'error';
+
+            return { updates, source: src, status };
+        } catch (err) {
+            logger.debug('Firmware update availability query threw', {
+                device: device.name,
+                error: err instanceof Error ? err.message : String(err),
+            });
+            return { updates: [], source: 'unavailable', status: 'unavailable' };
         }
     }
 

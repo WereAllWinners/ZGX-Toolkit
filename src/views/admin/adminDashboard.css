@@ -538,6 +538,13 @@
 .btn.btn-tailscale:hover {
     background: color-mix(in srgb, var(--vscode-charts-blue, #4fc1ff) 25%, transparent);
 }
+.btn.btn-firmware {
+    background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 15%, transparent);
+    color: var(--vscode-editorWarning-foreground, #cca700);
+}
+.btn.btn-firmware:hover {
+    background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 25%, transparent);
+}
 
 /* ── Tailscale status badge (card-body row) ──────────────── */
 
@@ -619,6 +626,11 @@
 
 .update-badge-error {
     background: var(--vscode-testing-iconFailed, #f14c4c);
+    color: var(--vscode-editor-background);
+}
+
+.update-badge-firmware {
+    background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 85%, var(--vscode-editor-background));
     color: var(--vscode-editor-background);
 }
 

@@ -10,7 +10,7 @@ import { ITelemetryService } from '../../../types/telemetry';
 import { Message } from '../../../types/messages';
 import { DeviceService } from '../../../services/deviceService';
 import { Device } from '../../../types/devices';
-import { ApplyPlan, ApplyResult, PendingUpdatesState } from '../../../types/scheduledUpdates';
+import { ApplyPlan, ApplyResult, ApplyScope, PendingUpdatesState } from '../../../types/scheduledUpdates';
 import { updateReconciliationService } from '../../../services/updateReconciliationService';
 import { scheduledCheckupService } from '../../../services/scheduledCheckupService';
 
@@ -64,27 +64,42 @@ export class UpdateReviewViewController extends BaseViewController {
             );
         }
 
+        const firmwareCandidates = pending.firmwareCandidates ?? [];
+        const firmwareExclusions = pending.firmwareExclusions ?? [];
+
         const totalAvailable =
             pending.candidates.length +
             pending.ansibleExclusions.length +
-            pending.kernelExclusions.length;
+            pending.kernelExclusions.length +
+            firmwareCandidates.length;
+
+        const firmwareRequiresReboot = firmwareCandidates.some(f => f.requiresReboot);
 
         const templateData = {
-            deviceName:          device.name,
-            source:              pending.source,
-            computedAt:          this.formatAge(pending.computedAt),
+            deviceName:              device.name,
+            source:                  pending.source,
+            computedAt:              this.formatAge(pending.computedAt),
             totalAvailable,
-            candidateCount:      pending.candidates.length,
-            ansibleCount:        pending.ansibleExclusions.length,
-            kernelCount:         pending.kernelExclusions.length,
-            hasCandidates:       pending.candidates.length > 0,
-            hasAnsibleExclusions: pending.ansibleExclusions.length > 0,
-            hasKernelExclusions:  pending.kernelExclusions.length > 0,
-            candidates:          pending.candidates,
-            ansibleExclusions:   pending.ansibleExclusions,
-            kernelExclusions:    pending.kernelExclusions,
-            isApplied:           pending.status === 'applied',
-            hasApplyError:       pending.status === 'error',
+            candidateCount:          pending.candidates.length,
+            ansibleCount:            pending.ansibleExclusions.length,
+            kernelCount:             pending.kernelExclusions.length,
+            hasCandidates:           pending.candidates.length > 0,
+            hasAnsibleExclusions:    pending.ansibleExclusions.length > 0,
+            hasKernelExclusions:     pending.kernelExclusions.length > 0,
+            candidates:              pending.candidates,
+            ansibleExclusions:       pending.ansibleExclusions,
+            kernelExclusions:        pending.kernelExclusions,
+            isApplied:               pending.status === 'applied',
+            hasApplyError:           pending.status === 'error',
+            firmwareCandidates,
+            firmwareExclusions,
+            hasFirmwareCandidates:   firmwareCandidates.length > 0,
+            hasFirmwareExclusions:   firmwareExclusions.length > 0,
+            firmwareRequiresReboot,
+            firmwareCandidateCount:  firmwareCandidates.length,
+            isFirmwareApplied:       pending.firmwareStatus === 'applied',
+            hasFirmwareApplyError:   pending.firmwareStatus === 'error',
+            hasBothSections:         pending.candidates.length > 0 && firmwareCandidates.length > 0,
         };
 
         const html = this.renderTemplate(this.template, templateData);
@@ -98,7 +113,24 @@ export class UpdateReviewViewController extends BaseViewController {
         switch (msg.type) {
             case 'apply-selected':
                 if (this.currentDevice) {
-                    await this.applySelected(this.currentDevice, msg.packages ?? []);
+                    await this.applyScoped(this.currentDevice, msg.packages ?? [], [], 'packages');
+                }
+                break;
+
+            case 'apply-firmware-selected':
+                if (this.currentDevice) {
+                    await this.applyScoped(this.currentDevice, [], msg.packages ?? [], 'firmware');
+                }
+                break;
+
+            case 'apply-all-selected':
+                if (this.currentDevice) {
+                    await this.applyScoped(
+                        this.currentDevice,
+                        msg.packages ?? [],
+                        msg.firmwarePackages ?? [],
+                        'all',
+                    );
                 }
                 break;
 
@@ -128,51 +160,78 @@ export class UpdateReviewViewController extends BaseViewController {
         await this.render({ deviceId: device.id });
     }
 
-    // ── Real apply handler ───────────────────────────────────────────────────
+    // ── Apply handler ────────────────────────────────────────────────────────
 
-    private async applySelected(device: Device, packages: string[]): Promise<void> {
-        if (packages.length === 0) {
-            vscode.window.showWarningMessage('ZGX Toolkit: No packages selected.');
+    private async applyScoped(
+        device: Device,
+        packages: string[],
+        firmwarePackages: string[],
+        scope: ApplyScope,
+    ): Promise<void> {
+        if (packages.length === 0 && firmwarePackages.length === 0) {
+            vscode.window.showWarningMessage('ZGX Toolkit: No items selected.');
             return;
         }
 
-        // TOCTOU re-validation: re-run both filters before showing confirmation
-        const plan = await updateReconciliationService.buildApplyPlan(device, packages);
+        // TOCTOU re-validation: re-run all filters before showing confirmation
+        const plan = await updateReconciliationService.buildApplyPlan(
+            device, packages, firmwarePackages, scope,
+        );
 
-        if (plan.toApply.length === 0) {
+        const toApplyFirmware = plan.toApplyFirmware ?? [];
+        const hasPackages = plan.toApply.length > 0;
+        const hasFirmware = toApplyFirmware.length > 0;
+
+        if (!hasPackages && !hasFirmware) {
             const reasons = plan.skipped.map(s => `${s.package} (${s.reason})`).join(', ');
             vscode.window.showInformationMessage(
-                `ZGX Toolkit: All selected packages were dropped during re-validation: ${reasons}`,
+                `ZGX Toolkit: All selected items were dropped during re-validation${reasons ? `: ${reasons}` : '.'}`,
             );
             return;
         }
 
         // Build confirmation modal content
-        const lines: string[] = [
-            `Apply ${plan.toApply.length} update(s) to ${device.name} via ${plan.provider}?`,
-            '',
-            ...plan.toApply,
-        ];
-        if (plan.additionalChanges.length > 0) {
-            lines.push('', `Also pulls in: ${plan.additionalChanges.join(', ')}`);
+        const lines: string[] = [];
+
+        if (hasPackages) {
+            lines.push(`Apply ${plan.toApply.length} package update(s) to ${device.name} via ${plan.provider}:`);
+            lines.push(...plan.toApply);
+            if (plan.additionalChanges.length > 0) {
+                lines.push('', `Also pulls in: ${plan.additionalChanges.join(', ')}`);
+            }
+            if (plan.dgxControllerAbsent) {
+                lines.push('', 'Note: spark_updatectl is not present; applying via the native package manager.');
+            }
         }
+
+        if (hasFirmware) {
+            if (hasPackages) { lines.push(''); }
+            lines.push(
+                `Apply ${toApplyFirmware.length} firmware update(s) to ${device.name}:`,
+                ...toApplyFirmware.map(f => f.deviceLabel || f.package),
+            );
+            if (plan.firmwareRequiresReboot) {
+                lines.push('', 'WARNING: Firmware updates require a device restart to take effect.');
+            }
+        }
+
         if (plan.skipped.length > 0) {
             lines.push(
                 '',
                 `Dropped since last checkup: ${plan.skipped.map(s => `${s.package} (${s.reason})`).join(', ')}`,
             );
         }
-        if (plan.dgxControllerAbsent) {
-            lines.push('', 'Note: spark_updatectl is not present; applying via the native package manager.');
-        }
+
         lines.push('', 'This changes the device and may require a reboot.');
+
+        const confirmLabel = hasFirmware && !hasPackages ? 'Apply firmware' : 'Apply updates';
 
         const confirm = await vscode.window.showWarningMessage(
             lines.join('\n'),
             { modal: true },
-            'Apply updates',
+            confirmLabel,
         );
-        if (confirm !== 'Apply updates') { return; }
+        if (confirm !== confirmLabel) { return; }
 
         // First attempt (no password)
         let result = await this.executeWithProgress(device, plan);
@@ -188,9 +247,23 @@ export class UpdateReviewViewController extends BaseViewController {
             result = await this.executeWithProgress(device, plan, password);
         }
 
-        if (result.success) {
+        const parts: string[] = [];
+        if (result.applied.length > 0) {
+            parts.push(`${result.applied.length} update(s)`);
+        }
+        const fwApplied = result.firmwareApplied ?? [];
+        if (fwApplied.length > 0) {
+            parts.push(`${fwApplied.length} firmware update(s)`);
+        }
+
+        const firmwareOk = result.firmwareSuccess !== false; // undefined = not attempted → ok
+        if (result.success && firmwareOk) {
             vscode.window.showInformationMessage(
-                `ZGX Toolkit: Applied ${result.applied.length} update(s) to ${device.name}.`,
+                `ZGX Toolkit: Applied ${parts.join(' and ')} to ${device.name}.`,
+            );
+        } else if (result.success && !firmwareOk) {
+            vscode.window.showWarningMessage(
+                `ZGX Toolkit: Packages applied but firmware update failed for ${device.name}: ${result.note ?? 'Unknown error'}`,
             );
         } else {
             vscode.window.showErrorMessage(

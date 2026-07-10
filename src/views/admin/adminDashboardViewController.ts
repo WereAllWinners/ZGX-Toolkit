@@ -249,6 +249,10 @@ export class AdminDashboardViewController extends BaseViewController {
                 await this.handleGroupApplyUpdates(msg.groupId);
                 break;
 
+            case 'groupApplyFirmware':
+                await this.handleGroupApplyFirmware(msg.groupId);
+                break;
+
             case 'groupRunPolicy':
                 await this.handleGroupRunPolicy(msg.groupId);
                 break;
@@ -708,6 +712,95 @@ export class AdminDashboardViewController extends BaseViewController {
                 `ZGX Toolkit: Group update failed — ${error instanceof Error ? error.message : String(error)}`
             );
             this.logger.error('Admin dashboard: groupApplyUpdates failed', { groupId, error });
+        } finally {
+            this.postGroupMessage('clearLoading', groupId);
+            await this.refresh();
+        }
+    }
+
+    private async handleGroupApplyFirmware(groupId: string): Promise<void> {
+        const { group, devices } = await this.resolveGroup(groupId);
+        if (!group || devices.length === 0) { return; }
+
+        const devicesWithFirmware = devices.filter(d => {
+            const pending = d.metadata?.pendingUpdates as PendingUpdatesState | undefined;
+            return (pending?.firmwareCandidates?.length ?? 0) > 0;
+        });
+
+        if (devicesWithFirmware.length === 0) {
+            vscode.window.showInformationMessage(
+                `ZGX Toolkit: No firmware updates available for any device in "${group.name}". Run a checkup first.`
+            );
+            this.postGroupMessage('clearLoading', groupId);
+            return;
+        }
+
+        const answer = await vscode.window.showWarningMessage(
+            `Apply firmware updates on ${devicesWithFirmware.length} device${devicesWithFirmware.length === 1 ? '' : 's'} in "${group.name}"? Devices may require a manual restart after the update.`,
+            { modal: true },
+            'Apply Firmware'
+        );
+        if (answer !== 'Apply Firmware') {
+            this.postGroupMessage('clearLoading', groupId);
+            return;
+        }
+
+        const channel = this.getOutputChannel();
+        channel.show(true);
+        channel.appendLine(`\n[${new Date().toISOString()}] Apply firmware — "${group.name}" (${devicesWithFirmware.length} device${devicesWithFirmware.length === 1 ? '' : 's'})`);
+
+        try {
+            const { updateReconciliationService } = await import('../../services/updateReconciliationService');
+
+            const results = await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: `ZGX Toolkit: Applying firmware across "${group.name}"…`,
+                    cancellable: false,
+                },
+                () => Promise.allSettled(devicesWithFirmware.map(async d => {
+                    const pending = d.metadata?.pendingUpdates as PendingUpdatesState | undefined;
+                    const fwPackages = (pending?.firmwareCandidates ?? []).map(c => c.package);
+                    const plan = await updateReconciliationService.buildApplyPlan(d, [], fwPackages, 'firmware');
+                    const result = await updateReconciliationService.executeApplyPlan(d, plan);
+                    return { device: d, result };
+                }))
+            );
+
+            let successCount = 0;
+            let failCount = 0;
+            for (const r of results) {
+                if (r.status === 'fulfilled') {
+                    const { device, result } = r.value;
+                    if (result.firmwareSuccess) {
+                        channel.appendLine(`  ${device.name}: OK (${(result.firmwareApplied ?? []).length} update(s))`);
+                        successCount++;
+                    } else {
+                        channel.appendLine(`  ${device.name}: FAILED — ${result.note ?? 'unknown error'}`);
+                        failCount++;
+                    }
+                } else {
+                    channel.appendLine(`  ERROR: ${r.reason}`);
+                    failCount++;
+                }
+            }
+
+            channel.appendLine(`\nFirmware apply complete — ${successCount} succeeded, ${failCount} failed.`);
+
+            if (failCount === 0) {
+                vscode.window.showInformationMessage(
+                    `ZGX Toolkit: Firmware applied to ${successCount} device${successCount === 1 ? '' : 's'} in "${group.name}". Restart devices to activate.`
+                );
+            } else {
+                vscode.window.showWarningMessage(
+                    `ZGX Toolkit: ${successCount} succeeded, ${failCount} failed in "${group.name}". See output for details.`
+                );
+            }
+        } catch (error) {
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Group firmware apply failed — ${error instanceof Error ? error.message : String(error)}`
+            );
+            this.logger.error('Admin dashboard: groupApplyFirmware failed', { groupId, error });
         } finally {
             this.postGroupMessage('clearLoading', groupId);
             await this.refresh();
@@ -1290,6 +1383,11 @@ export class AdminDashboardViewController extends BaseViewController {
         const hasNoUpdates = pendingStatus === 'none';
         const canOpenUpdateReview = pending !== undefined;
 
+        const firmwareCandidates = pending?.firmwareCandidates ?? [];
+        const hasFirmwareUpdates = firmwareCandidates.length > 0;
+        const firmwareUpdateCount = firmwareCandidates.length;
+        const isFirmwareApplied = pending?.firmwareStatus === 'applied';
+
         const checkupBase = {
             lastCheckedAt,
             hasPendingUpdates,
@@ -1298,6 +1396,9 @@ export class AdminDashboardViewController extends BaseViewController {
             hasUpdateError,
             hasNoUpdates,
             canOpenUpdateReview,
+            hasFirmwareUpdates,
+            firmwareUpdateCount,
+            isFirmwareApplied,
         };
 
         const snapshot = device.metadata?.manageabilitySnapshot as ManageabilitySnapshot | undefined;

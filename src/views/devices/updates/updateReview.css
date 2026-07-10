@@ -269,6 +269,56 @@
     color: var(--vscode-foreground);
 }
 
+/* Firmware section */
+.firmware-section {
+    background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 5%, transparent);
+    border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 30%, transparent);
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-bottom: 32px;
+}
+
+.firmware-warning-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 3px;
+    margin-bottom: 12px;
+    font-size: 0.85em;
+    background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 50%, transparent);
+    color: var(--vscode-foreground);
+}
+
+.btn-firmware {
+    background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 80%, var(--vscode-editor-background));
+    color: var(--vscode-editor-background);
+}
+
+.btn-firmware:hover {
+    opacity: 0.85;
+}
+
+/* Source tag variants */
+.source-tag-fwupd {
+    background: color-mix(in srgb, var(--vscode-terminal-ansiCyan, #29b8db) 30%, var(--vscode-badge-background));
+    color: var(--vscode-foreground);
+}
+
+.source-tag-apt-firmware {
+    background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 30%, var(--vscode-badge-background));
+    color: var(--vscode-foreground);
+}
+
+/* Apply-all bar */
+.apply-all-bar {
+    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
 /* Empty state */
 .empty-state {
     text-align: center;

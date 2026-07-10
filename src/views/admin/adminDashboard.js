@@ -82,6 +82,11 @@
                         setGroupLoading(groupId, true);
                         vscode.postMessage({ type: 'groupApplyUpdates', groupId });
                         break;
+                    case 'group-apply-firmware':
+                        if (!groupId) { return; }
+                        setGroupLoading(groupId, true);
+                        vscode.postMessage({ type: 'groupApplyFirmware', groupId });
+                        break;
                     case 'group-run-policy':
                         if (!groupId) { return; }
                         setGroupLoading(groupId, true);

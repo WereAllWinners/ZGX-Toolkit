@@ -44,6 +44,8 @@ jest.mock('../../services/updateReconciliationService', () => ({
             candidates: [],
             ansibleExclusions: [],
             kernelExclusions: [],
+            firmwareCandidates: [],
+            firmwareExclusions: [],
         }),
         buildPendingState: jest.fn().mockReturnValue({
             computedAt: '2026-06-28T10:00:00Z',
@@ -268,8 +270,14 @@ describe('ScheduledCheckupService', () => {
 
             await service.runCheckupNow(device);
 
-            expect(callOrder).toEqual(['detect', 'collectInventory', 'runTool']);
-            expect((manageabilityService.runTool as jest.Mock).mock.calls[0][1]).toBe('update_availability');
+            // detect and collectInventory come first; runTool is called twice in parallel
+            // (update_availability + firmware_update_availability)
+            expect(callOrder[0]).toBe('detect');
+            expect(callOrder[1]).toBe('collectInventory');
+            expect(callOrder.filter(c => c === 'runTool')).toHaveLength(2);
+            const toolKeys = (manageabilityService.runTool as jest.Mock).mock.calls.map((c: any[]) => c[1]);
+            expect(toolKeys).toContain('update_availability');
+            expect(toolKeys).toContain('firmware_update_availability');
         });
 
         it('stores CheckupResult in metadata.lastCheckup via updateDevice', async () => {

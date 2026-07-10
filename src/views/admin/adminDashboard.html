@@ -130,6 +130,26 @@
                     <span class="card-value muted">Up to date</span>
                 </div>
                 {{/if}}
+                {{#if hasFirmwareUpdates}}
+                <div class="card-row">
+                    <span class="card-label">Firmware</span>
+                    <span class="card-value">
+                        <button class="update-badge update-badge-firmware" data-action="open-update-review" data-device-id="{{id}}" title="Review firmware updates for this device">
+                            <i class="codicon codicon-circuit-board"></i> {{firmwareUpdateCount}} firmware update(s)
+                        </button>
+                    </span>
+                </div>
+                {{/if}}
+                {{#if isFirmwareApplied}}
+                <div class="card-row">
+                    <span class="card-label">Firmware</span>
+                    <span class="card-value">
+                        <button class="update-badge update-badge-applied" data-action="open-update-review" data-device-id="{{id}}" title="View applied firmware">
+                            <i class="codicon codicon-check-all"></i> Firmware applied
+                        </button>
+                    </span>
+                </div>
+                {{/if}}
                 {{#if groupNames}}
                 <div class="card-row">
                     <span class="card-label">Groups</span>
@@ -300,6 +320,9 @@
                 </button>
                 <button class="btn btn-sm btn-update" data-action="group-apply-updates" data-group-id="{{id}}" title="Check for and apply updates on all devices in this group">
                     <i class="codicon codicon-arrow-up"></i> Apply Updates
+                </button>
+                <button class="btn btn-sm btn-firmware" data-action="group-apply-firmware" data-group-id="{{id}}" title="Apply firmware/BIOS updates on all devices in this group">
+                    <i class="codicon codicon-circuit-board"></i> Apply Firmware
                 </button>
                 {{#if hasPolicy}}
                 <button class="btn btn-sm btn-policy" data-action="group-run-policy" data-group-id="{{id}}" title="Apply the Ansible group policy to all devices in this group">

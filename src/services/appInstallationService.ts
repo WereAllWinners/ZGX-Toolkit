@@ -329,7 +329,7 @@ export class AppInstallationService {
                     device,
                     sudoCommand,
                     { timeout: 30000, readyTimeout: 30000, keepaliveInterval: 10000, keepaliveCountMax: 3 },
-                    { operationName: app.name, sudoPassword, retries: 3 }
+                    { operationName: app.name, sudoPassword, sendSudoPassword: true, retries: 3 }
                 );
             } else {
                 result = await executeSSHCommand(
@@ -422,7 +422,7 @@ export class AppInstallationService {
             device,
             testCommand,
             { timeout: 30000, readyTimeout: 30000, keepaliveInterval: 10000, keepaliveCountMax: 3 },
-            { operationName: 'sudo validation', sudoPassword: password, timeoutSeconds: 10, retries: 0 }
+            { operationName: 'sudo validation', sudoPassword: password, sendSudoPassword: true, timeoutSeconds: 10, retries: 0 }
         );
 
         if (!result.success) {
@@ -746,7 +746,7 @@ export class AppInstallationService {
                     device,
                     sudoCommand,
                     { timeout: 30000, readyTimeout: 30000, keepaliveInterval: 10000, keepaliveCountMax: 3 },
-                    { operationName: app.name, sudoPassword, retries: 3 }
+                    { operationName: app.name, sudoPassword, sendSudoPassword: true, retries: 3 }
                 );
             } else {
                 result = await executeSSHCommand(

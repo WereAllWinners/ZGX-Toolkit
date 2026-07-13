@@ -18,6 +18,7 @@ import * as vscode from 'vscode';
 import { Device } from '../types/devices';
 import { logger } from '../utils/logger';
 import { executeSSHCommand } from '../utils/sshConnection';
+import { redactSudoOutput } from '../utils/string';
 import {
     DGX_TOOL_COMMANDS,
     DGXToolKey,
@@ -207,6 +208,7 @@ export class ManageabilityService {
      */
     async applyUpdates(device: Device, sudoPassword?: string): Promise<ApplyUpdatesResult> {
         logger.info('Applying updates via apt', { device: device.name, withPassword: !!sudoPassword });
+        const redact = (s: string) => redactSudoOutput(s, sudoPassword);
 
         // Without a password: sudo -n exits immediately (non-interactive) if one is required.
         // With a password: sudo -S reads it from stdin; -p '' suppresses the prompt string.
@@ -214,7 +216,7 @@ export class ManageabilityService {
         const execOpts = {
             operationName: 'manageability:applyUpdates',
             timeoutSeconds: TIMEOUT_UPDATE_CONTROLLER,
-            ...(sudoPassword ? { sudoPassword } : {}),
+            ...(sudoPassword ? { sudoPassword, sendSudoPassword: true } : {}),
         };
 
         // Prefer full-upgrade (resolves held-back packages) but fall back to upgrade when
@@ -231,7 +233,7 @@ export class ManageabilityService {
             // Password required — only actionable when we haven't supplied one yet.
             if (!sudoPassword && combined.includes('sudo:') && combined.includes('password')) {
                 logger.info('applyUpdates: sudo password required, caller should prompt', { device: device.name });
-                return { success: false, output, requiresPassword: true, error: 'Sudo requires a password on this device.' };
+                return { success: false, output: redact(output), requiresPassword: true, error: 'Sudo requires a password on this device.' };
             }
 
             // "not allowed to run" is the sudoers denial phrase, distinct from wrong-password
@@ -243,9 +245,9 @@ export class ManageabilityService {
             }
 
             if (!result.success) {
-                const error = result.error?.message ?? result.stderr ?? 'SSH command failed';
+                const error = redact(result.error?.message ?? result.stderr ?? 'SSH command failed');
                 logger.error('applyUpdates SSH failure', { device: device.name, aptCmd, error });
-                return { success: false, output, error };
+                return { success: false, output: redact(output), error };
             }
 
             logger.info('applyUpdates: apt done, attempting fwupdmgr', { device: device.name, aptCmd });
@@ -270,7 +272,7 @@ export class ManageabilityService {
                 : output;
 
             logger.info('applyUpdates complete', { device: device.name, aptCmd });
-            return { success: true, output: finalOutput };
+            return { success: true, output: redact(finalOutput) };
         }
 
         // Both apt-get variants denied by sudoers. If we haven't asked for a password yet,
@@ -321,6 +323,7 @@ export class ManageabilityService {
      */
     async installCollector(device: Device, sudoPassword?: string): Promise<InstallCollectorResult> {
         logger.info('Installing zgx-collector on device', { device: device.name, withPassword: !!sudoPassword });
+        const redact = (s: string) => redactSudoOutput(s, sudoPassword);
 
         const scriptPath = path.join(__dirname, '..', '..', 'resources', 'zgx-collector');
         let scriptContent: string;
@@ -341,7 +344,7 @@ export class ManageabilityService {
         const systemResult = await executeSSHCommand(device, systemCmd, MANAGEABILITY_CONN_OPTS, {
             operationName: 'manageability:installCollector:system',
             timeoutSeconds: 60,
-            ...(sudoPassword ? { sudoPassword } : {}),
+            ...(sudoPassword ? { sudoPassword, sendSudoPassword: true } : {}),
         });
 
         if (!systemResult.success) {
@@ -352,7 +355,7 @@ export class ManageabilityService {
                 // Fall through to user-local install rather than blocking immediately.
             } else {
                 logger.warn('installCollector: system-wide install failed, trying ~/.local/bin', {
-                    device: device.name, stderr: systemResult.stderr,
+                    device: device.name, stderr: redact(systemResult.stderr ?? ''),
                 });
             }
         } else {
@@ -384,8 +387,8 @@ export class ManageabilityService {
         return {
             success: false,
             error: `Installation failed on ${device.name}. ` +
-                   `System install: ${systemResult.stderr ?? 'failed'}. ` +
-                   `User install: ${userResult.stderr ?? 'failed'}.`,
+                   `System install: ${redact(systemResult.stderr ?? 'failed')}. ` +
+                   `User install: ${redact(userResult.stderr ?? 'failed')}.`,
         };
     }
 

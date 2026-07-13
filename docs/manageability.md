@@ -70,6 +70,40 @@ Every collector outputs:
   automatically. The extension always requires explicit user confirmation.
   This is enforced at the `ManageabilityService` layer — do not bypass it.
 
+## Applying updates & sudo configuration
+
+Applying package or firmware updates, and installing the collector
+system-wide, may require `sudo` on the target device. Two configurations
+are supported:
+
+- **Recommended: NOPASSWD sudoers scoped to the specific commands the
+  extension runs.** With this configured, the extension never prompts for
+  or transmits a password. Add a drop-in sudoers file on each managed
+  device (via `visudo -f /etc/sudoers.d/zgx-toolkit`), scoped to only the
+  package-manager commands actually used on that device:
+
+  ```
+  # /etc/sudoers.d/zgx-toolkit
+  Cmnd_Alias ZGX_APT     = /usr/bin/apt-get full-upgrade -y *, \
+                           /usr/bin/apt-get upgrade -y *, \
+                           /usr/bin/apt-get install --only-upgrade -y *
+  Cmnd_Alias ZGX_DNF     = /usr/bin/dnf upgrade -y *
+  Cmnd_Alias ZGX_ZYPPER  = /usr/bin/zypper --non-interactive update *
+  Cmnd_Alias ZGX_FWUPD   = /usr/bin/fwupdmgr update -y --no-reboot-check *
+  Cmnd_Alias ZGX_COLLECTOR = /usr/bin/tee /usr/local/bin/zgx-collector, \
+                             /usr/bin/chmod +x /usr/local/bin/zgx-collector
+
+  your_ssh_user ALL=(root) NOPASSWD: ZGX_APT, ZGX_DNF, ZGX_ZYPPER, ZGX_FWUPD, ZGX_COLLECTOR
+  ```
+
+  This is a prerequisite for unattended/fleet update rollouts — an
+  operator should not need to type a password per device.
+
+- **Fallback: password prompt.** Without NOPASSWD, the extension prompts
+  for the sudo password and sends it directly to the remote command's
+  stdin, never as part of a shell command string. See `SECURITY.md` for
+  the full handling and redaction guarantees.
+
 ## Health monitoring
 
 The extension polls device health on a configurable interval (default:

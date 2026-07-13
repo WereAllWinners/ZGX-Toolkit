@@ -787,7 +787,8 @@ export class ConnectXGroupService {
                 { 
                     operationName: 'Write netplan config', 
                     timeoutSeconds: 15,
-                    sudoPassword: password
+                    sudoPassword: password,
+                    sendSudoPassword: true
                 }
             );
 
@@ -816,7 +817,8 @@ export class ConnectXGroupService {
                 { 
                     operationName: 'Apply netplan config', 
                     timeoutSeconds: 30,
-                    sudoPassword: password
+                    sudoPassword: password,
+                    sendSudoPassword: true
                 }
             );
 
@@ -943,7 +945,8 @@ export class ConnectXGroupService {
                 {
                     operationName: 'Check netplan config',
                     timeoutSeconds: 10,
-                    sudoPassword: password
+                    sudoPassword: password,
+                    sendSudoPassword: true
                 }
             );
 
@@ -970,7 +973,8 @@ export class ConnectXGroupService {
                 {
                     operationName: 'Remove netplan config',
                     timeoutSeconds: 10,
-                    sudoPassword: password
+                    sudoPassword: password,
+                    sendSudoPassword: true
                 }
             );
 
@@ -989,7 +993,8 @@ export class ConnectXGroupService {
                 {
                     operationName: 'Apply netplan config',
                     timeoutSeconds: 30,
-                    sudoPassword: password
+                    sudoPassword: password,
+                    sendSudoPassword: true
                 }
             );
 

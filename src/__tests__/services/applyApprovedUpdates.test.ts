@@ -416,6 +416,83 @@ describe('UpdateReconciliationService — Task 03', () => {
     });
 
     // =========================================================================
+    // F-3 — package/firmware name allowlisting
+    // =========================================================================
+
+    describe('executeApplyPlan() — package/firmware name allowlisting (F-3)', () => {
+        function makeMinimalPlan(overrides: Partial<ApplyPlan> = {}): ApplyPlan {
+            return {
+                provider: 'apt',
+                toApply: ['curl'],
+                skipped: [],
+                additionalChanges: [],
+                dgxControllerAbsent: false,
+                ...overrides,
+            };
+        }
+
+        it('rejects the entire apply when a selected package name contains shell metacharacters', async () => {
+            const result = await service.executeApplyPlan(
+                makeDevice(),
+                makeMinimalPlan({ toApply: ['curl', 'pkg; rm -rf /'] }),
+            );
+
+            expect(result.success).toBe(false);
+            expect(result.note).toMatch(/invalid package\/firmware name/i);
+            expect(executeSSHCommand).not.toHaveBeenCalled();
+        });
+
+        it('rejects the entire apply when a selected firmware package name is malicious', async () => {
+            const result = await service.executeApplyPlan(
+                makeDevice(),
+                makeMinimalPlan({
+                    toApply: [],
+                    provider: 'none',
+                    firmwareProvider: 'apt',
+                    toApplyFirmware: [{
+                        package: '$(whoami)',
+                        currentVersion: '1',
+                        availableVersion: '2',
+                        source: 'apt-firmware',
+                        requiresReboot: false,
+                        deviceLabel: 'evil',
+                    }],
+                }),
+            );
+
+            expect(result.success).toBe(false);
+            expect(executeSSHCommand).not.toHaveBeenCalled();
+        });
+
+        it('allows the apply through when all names are valid', async () => {
+            (executeSSHCommand as jest.Mock).mockResolvedValue(makeSshResult('0 upgraded'));
+
+            const result = await service.executeApplyPlan(
+                makeDevice(),
+                makeMinimalPlan({ toApply: ['curl', 'nvidia-driver-550'] }),
+            );
+
+            expect(result.success).toBe(true);
+            expect(executeSSHCommand).toHaveBeenCalled();
+        });
+    });
+
+    describe('buildApplyPlan() — simulate() rejects malicious device-reported candidates (F-3)', () => {
+        it('throws rather than shelling out when a device-reported candidate name is malicious', async () => {
+            (manageabilityService.runTool as jest.Mock).mockResolvedValue(
+                makeToolResult([{ pkg: 'curl; rm -rf /', cur: '7.0', avail: '8.0' }]),
+            );
+            (platformProfileService.getProfile as jest.Mock).mockReturnValue(makeProfile({ packageManager: 'apt' }));
+
+            await expect(
+                service.buildApplyPlan(makeDevice(), ['curl; rm -rf /']),
+            ).rejects.toThrow(/invalid package\/firmware name/i);
+
+            expect(executeSSHCommand).not.toHaveBeenCalled();
+        });
+    });
+
+    // =========================================================================
     // executeApplyPlan() — status transitions
     // =========================================================================
 

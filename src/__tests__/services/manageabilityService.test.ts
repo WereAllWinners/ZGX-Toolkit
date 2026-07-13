@@ -357,6 +357,58 @@ describe('ManageabilityService', () => {
             expect(result.success).toBe(false);
             expect(result.error).toBeTruthy();
         });
+
+        it('passes sendSudoPassword:true when a password is supplied (F-2)', async () => {
+            mockExecuteSSHCommand.mockResolvedValueOnce(makeSSHSuccess('0 upgraded.'));
+            mockExecuteSSHCommand.mockResolvedValueOnce(makeSSHSuccess(''));
+
+            await service.applyUpdates(device, 'correctpassword');
+
+            expect(mockExecuteSSHCommand).toHaveBeenNthCalledWith(
+                1,
+                device,
+                expect.stringContaining('sudo -S'),
+                { readyTimeout: 5000 },
+                expect.objectContaining({ sudoPassword: 'correctpassword', sendSudoPassword: true }),
+            );
+        });
+    });
+
+    // -----------------------------------------------------------------------
+    // installCollector — F-2 regression: the system-install path is piped
+    // through base64/tee and never starts with the literal text 'sudo -S', so
+    // it must receive sendSudoPassword explicitly rather than relying on
+    // executeCommandOnClient to infer it from the command string.
+    // -----------------------------------------------------------------------
+
+    describe('installCollector', () => {
+        it('passes sendSudoPassword:true on the system-install call when a password is supplied', async () => {
+            mockExecuteSSHCommand.mockResolvedValueOnce(makeSSHSuccess(''));
+
+            await service.installCollector(device, 'correctpassword');
+
+            expect(mockExecuteSSHCommand).toHaveBeenNthCalledWith(
+                1,
+                device,
+                expect.any(String),
+                expect.anything(),
+                expect.objectContaining({
+                    operationName: 'manageability:installCollector:system',
+                    sudoPassword: 'correctpassword',
+                    sendSudoPassword: true,
+                }),
+            );
+        });
+
+        it('does not pass sudoPassword/sendSudoPassword when no password is supplied', async () => {
+            mockExecuteSSHCommand.mockResolvedValueOnce(makeSSHSuccess(''));
+
+            await service.installCollector(device);
+
+            const [, , , execOpts] = mockExecuteSSHCommand.mock.calls[0];
+            expect(execOpts).not.toHaveProperty('sudoPassword');
+            expect(execOpts).not.toHaveProperty('sendSudoPassword');
+        });
     });
 
     // -----------------------------------------------------------------------

@@ -148,7 +148,7 @@ export class DNSServiceRegistration {
             device,
             createFileCommand,
             { readyTimeout: 30000 },
-            { operationName: 'Create service file', sudoPassword, timeoutSeconds: 30 }
+            { operationName: 'Create service file', sudoPassword, sendSudoPassword: true, timeoutSeconds: 30 }
         );
 
         if (!createResult.success) {
@@ -178,7 +178,7 @@ export class DNSServiceRegistration {
             device,
             restartCommand,
             { readyTimeout: 30000 },
-            { operationName: 'Restart Avahi', sudoPassword, timeoutSeconds: 30 }
+            { operationName: 'Restart Avahi', sudoPassword, sendSudoPassword: true, timeoutSeconds: 30 }
         );
 
         if (!restartResult.success) {
@@ -460,7 +460,7 @@ export class DNSServiceRegistration {
             device,
             testCommand,
             { readyTimeout: 30000 },
-            { operationName: 'sudo validation', sudoPassword: password, timeoutSeconds: 10 }
+            { operationName: 'sudo validation', sudoPassword: password, sendSudoPassword: true, timeoutSeconds: 10 }
         );
 
         if (!result.success) {

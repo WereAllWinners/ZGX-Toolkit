@@ -28,6 +28,8 @@ import { manageabilityService } from './manageabilityService';
 import { deviceService } from './deviceService';
 import { executeSSHCommand } from '../utils/sshConnection';
 import { logger } from '../utils/logger';
+import { redactSudoOutput } from '../utils/string';
+import { assertValidPackageNames } from '../utils/packageName';
 
 const APPLY_CONN_OPTS = { readyTimeout: 5000 };
 const APPLY_TIMEOUT_SECONDS = 300;
@@ -430,6 +432,7 @@ export class UpdateReconciliationService {
         plan: ApplyPlan,
         sudoPassword?: string,
     ): Promise<ApplyResult> {
+        const redact = (s: string) => redactSudoOutput(s, sudoPassword);
         const toApplyFirmware = plan.toApplyFirmware ?? [];
         const firmwareProvider = plan.firmwareProvider ?? 'none';
         const hasPackages = plan.toApply.length > 0 && plan.provider !== 'none';
@@ -447,11 +450,31 @@ export class UpdateReconciliationService {
             };
         }
 
+        // Reject the entire apply if any selected package/firmware token isn't a
+        // plausible package name — abort rather than silently dropping the bad
+        // token(s), which could mask an attack or a corrupted candidate list.
+        try {
+            assertValidPackageNames(plan.toApply);
+            assertValidPackageNames(toApplyFirmware.map(f => f.package));
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.error('executeApplyPlan: rejected invalid package/firmware name', { device: device.name, error: message });
+            return {
+                provider: plan.provider,
+                applied: [],
+                skipped: plan.skipped,
+                success: false,
+                note: message,
+                firmwareApplied: [],
+                firmwareSuccess: false,
+            };
+        }
+
         const sudoFlags = sudoPassword ? "-S -p ''" : '-n';
         const execOpts = {
             operationName: 'updateApply:scoped',
             timeoutSeconds: APPLY_TIMEOUT_SECONDS,
-            ...(sudoPassword ? { sudoPassword } : {}),
+            ...(sudoPassword ? { sudoPassword, sendSudoPassword: true } : {}),
         };
 
         let packageSuccess = !hasPackages;
@@ -489,7 +512,7 @@ export class UpdateReconciliationService {
             }
 
             if (!result.success) {
-                const error = result.error?.message ?? result.stderr ?? 'SSH command failed';
+                const error = redact(result.error?.message ?? result.stderr ?? 'SSH command failed');
                 logger.error('executeApplyPlan: package apply failed', { device: device.name, error });
                 await this.persistStatus(device, 'error', error);
                 return {
@@ -538,7 +561,7 @@ export class UpdateReconciliationService {
                 await this.persistFirmwareApplied(device, firmwareApplied);
                 logger.info('executeApplyPlan: firmware apply succeeded', { device: device.name });
             } else {
-                const fwError = fwResult.error?.message ?? fwResult.stderr ?? 'Firmware apply failed';
+                const fwError = redact(fwResult.error?.message ?? fwResult.stderr ?? 'Firmware apply failed');
                 logger.error('executeApplyPlan: firmware apply failed', { device: device.name, error: fwError });
                 await this.persistFirmwareStatus(device, 'error');
                 pkgNote = pkgNote ? `${pkgNote}; firmware: ${fwError}` : `Firmware: ${fwError}`;
@@ -618,6 +641,13 @@ export class UpdateReconciliationService {
         provider: ApplyProvider,
         toApply: string[],
     ): Promise<string[]> {
+        // Validate before the soft-fail try block below — a malicious name must
+        // abort the whole plan, not be swallowed as an ordinary simulate() error
+        // (e.g. a transient SSH failure), since toApply here only guarantees a
+        // match against the device's own self-reported candidate set, which
+        // isn't trustworthy on an already-compromised device.
+        assertValidPackageNames(toApply);
+
         const pkgs = toApply.join(' ');
         const toApplySet = new Set(toApply);
         let simCmd = '';

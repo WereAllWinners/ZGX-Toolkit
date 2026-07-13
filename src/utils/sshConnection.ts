@@ -49,9 +49,20 @@ export interface SSHCommandExecutionOptions {
     operationName?: string;
 
     /**
-     * Sudo password for commands starting with 'sudo -S'
+     * Sudo password to write to the command's stdin. Only written when
+     * `sendSudoPassword` is also true — the command string itself is never
+     * inspected to decide whether to send it.
      */
     sudoPassword?: string;
+
+    /**
+     * Explicitly opt this command into having `sudoPassword` written to its
+     * stdin stream. Required in addition to `sudoPassword` — callers must
+     * know their own command invokes `sudo -S` rather than relying on a
+     * string-prefix guess, since wrapper commands (e.g. `echo ... | sudo -S`)
+     * don't start with the literal text `sudo -S`.
+     */
+    sendSudoPassword?: boolean;
 
     /**
      * Command timeout in seconds
@@ -228,8 +239,11 @@ export async function executeCommandOnClient(
                 safeReject(streamErr);
             });
 
-            // If password is provided and command is sudo, write it to stdin and close stdin
-            if (executionOptions?.sudoPassword && command.startsWith('sudo -S')) {
+            // Write the password to stdin only when the caller has explicitly flagged
+            // this command as expecting it — never inferred from the command string,
+            // since wrapper commands (e.g. a base64-piped `sudo -S tee`) don't start
+            // with the literal text 'sudo -S'.
+            if (executionOptions?.sudoPassword && executionOptions?.sendSudoPassword) {
                 stream.write(executionOptions.sudoPassword + '\n', (err) => {
                     if (err) {
                         logger.error(`Failed to write sudo password for ${operationName}`, { error: err.message });

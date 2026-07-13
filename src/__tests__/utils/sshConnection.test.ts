@@ -269,7 +269,7 @@ describe('sshConnection utilities', () => {
             await executeCommandOnClient(
                 mockSSHClient,
                 'sudo -S whoami',
-                { sudoPassword: password }
+                { sudoPassword: password, sendSudoPassword: true }
             );
 
             expect(mockWrite).toHaveBeenCalledWith(
@@ -279,7 +279,49 @@ describe('sshConnection utilities', () => {
             expect(mockStream.end).toHaveBeenCalled();
         });
 
-        it('should not write password for non-sudo commands', async () => {
+        it('writes the password for a command that does not start with the literal "sudo -S" text, as long as sendSudoPassword is set (F-2 regression)', async () => {
+            // Regression test for the confirmed live bug: a wrapper command like the
+            // collector's base64-piped system install never starts with 'sudo -S',
+            // so gating on the command string silently dropped the password. The
+            // gate must be driven entirely by sendSudoPassword, not command shape.
+            const mockWrite = jest.fn((data: string, callback: any) => {
+                callback(undefined);
+            });
+
+            const mockStream: any = {
+                on: jest.fn((event: string, cb: any) => {
+                    if (event === 'close') {
+                        setTimeout(() => cb(0), 0);
+                    }
+                    return mockStream;
+                }),
+                stderr: {
+                    on: jest.fn((event: string, cb: any) => {
+                        return mockStream.stderr;
+                    })
+                },
+                write: mockWrite,
+                end: jest.fn()
+            };
+
+            (mockSSHClient.exec as any) = jest.fn((command: string, callback: any) => {
+                callback(null, mockStream);
+            });
+
+            const password = 'test-password';
+            await executeCommandOnClient(
+                mockSSHClient,
+                "echo 'ZmFrZQ==' | base64 -d | sudo -S -p '' tee /usr/local/bin/zgx-collector > /dev/null",
+                { sudoPassword: password, sendSudoPassword: true }
+            );
+
+            expect(mockWrite).toHaveBeenCalledWith(
+                password + '\n',
+                expect.any(Function)
+            );
+        });
+
+        it('does not write the password when sendSudoPassword is not set, even for a sudo -S command', async () => {
             const mockWrite = jest.fn();
 
             const mockStream: any = {
@@ -304,7 +346,7 @@ describe('sshConnection utilities', () => {
 
             await executeCommandOnClient(
                 mockSSHClient,
-                'echo hello',
+                'sudo -S whoami',
                 { sudoPassword: 'test-password' }
             );
 
@@ -392,7 +434,7 @@ describe('sshConnection utilities', () => {
                 executeCommandOnClient(
                     mockSSHClient,
                     'sudo -S whoami',
-                    { sudoPassword: 'test-password' }
+                    { sudoPassword: 'test-password', sendSudoPassword: true }
                 )
             ).rejects.toThrow('Write failed');
         });
@@ -706,7 +748,7 @@ describe('sshConnection utilities', () => {
                 mockDevice,
                 'sudo -S whoami',
                 {},
-                { sudoPassword: password }
+                { sudoPassword: password, sendSudoPassword: true }
             );
 
             expect(mockWrite).toHaveBeenCalledWith(
@@ -716,7 +758,7 @@ describe('sshConnection utilities', () => {
             expect(mockStream.end).toHaveBeenCalled();
         });
 
-        it('should not write password for non-sudo commands', async () => {
+        it('does not write the password when sendSudoPassword is not set, even for a sudo -S command', async () => {
             const mockWrite = jest.fn();
 
             const mockStream: any = {
@@ -751,7 +793,7 @@ describe('sshConnection utilities', () => {
 
             await executeSSHCommand(
                 mockDevice,
-                'echo hello',
+                'sudo -S whoami',
                 {},
                 { sudoPassword: 'test-password' }
             );
@@ -1071,7 +1113,7 @@ describe('sshConnection utilities', () => {
                 mockDevice,
                 'sudo -S whoami',
                 {},
-                { sudoPassword: 'test-password' }
+                { sudoPassword: 'test-password', sendSudoPassword: true }
             );
 
             expect(result.success).toBe(false);

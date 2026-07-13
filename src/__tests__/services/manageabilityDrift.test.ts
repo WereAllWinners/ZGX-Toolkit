@@ -22,7 +22,10 @@ import { ManageabilitySnapshot } from '../../types/manageability';
 
 jest.mock('../../utils/sshConnection', () => ({ executeSSHCommand: jest.fn() }));
 jest.mock('../../services/deviceService', () => ({
-    deviceService: { updateDevice: jest.fn().mockResolvedValue(undefined) },
+    deviceService: {
+        updateDevice: jest.fn().mockResolvedValue(undefined),
+        mergeDeviceMetadata: jest.fn().mockResolvedValue(undefined),
+    },
 }));
 jest.mock('../../utils/logger', () => ({
     logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), trace: jest.fn() },

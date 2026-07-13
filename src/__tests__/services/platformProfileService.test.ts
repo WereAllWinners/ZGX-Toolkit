@@ -25,6 +25,7 @@ jest.mock('../../services/manageabilityService', () => ({
 jest.mock('../../services/deviceService', () => ({
     deviceService: {
         updateDevice: jest.fn().mockResolvedValue(undefined),
+        mergeDeviceMetadata: jest.fn().mockResolvedValue(undefined),
     },
 }));
 
@@ -43,7 +44,7 @@ import { manageabilityService } from '../../services/manageabilityService';
 import { deviceService } from '../../services/deviceService';
 
 const mockRunTool    = manageabilityService.runTool as jest.MockedFunction<typeof manageabilityService.runTool>;
-const mockUpdateDevice = deviceService.updateDevice as jest.MockedFunction<typeof deviceService.updateDevice>;
+const mockMergeDeviceMetadata = deviceService.mergeDeviceMetadata as jest.MockedFunction<typeof deviceService.mergeDeviceMetadata>;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -165,20 +166,15 @@ describe('PlatformProfileService', () => {
             expect(profile.detectedAt <= after).toBe(true);
         });
 
-        it('persists the profile under metadata.platformProfile without clobbering other metadata', async () => {
+        it('persists the profile via mergeDeviceMetadata (atomic merge, no other metadata read/clobbered)', async () => {
             const deviceWithMeta = makeDevice({ metadata: { existingKey: 'existingValue' } });
             mockRunTool.mockResolvedValueOnce(makeRunToolSuccess(makePlatformData()) as any);
 
             await service.detect(deviceWithMeta);
 
-            expect(mockUpdateDevice).toHaveBeenCalledWith(
+            expect(mockMergeDeviceMetadata).toHaveBeenCalledWith(
                 deviceWithMeta.id,
-                expect.objectContaining({
-                    metadata: expect.objectContaining({
-                        existingKey: 'existingValue',
-                        platformProfile: expect.objectContaining({ manufacturer: 'HP' }),
-                    }),
-                }),
+                { platformProfile: expect.objectContaining({ manufacturer: 'HP' }) },
             );
         });
 

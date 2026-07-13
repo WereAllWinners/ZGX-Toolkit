@@ -52,6 +52,7 @@ jest.mock('../../services', () => ({
     deviceService: {
         getAllDevices: jest.fn(),
         updateDevice: jest.fn().mockResolvedValue(undefined),
+        mergeDeviceMetadata: jest.fn().mockResolvedValue(undefined),
     },
     tailscaleService: {
         detect: jest.fn(),
@@ -99,6 +100,7 @@ describe('Tailscale Command Handlers', () => {
 
         (deviceService.getAllDevices as jest.Mock).mockResolvedValue([mockDevice]);
         (deviceService.updateDevice as jest.Mock).mockResolvedValue(undefined);
+        (deviceService.mergeDeviceMetadata as jest.Mock).mockResolvedValue(undefined);
         (tailscaleService.detect as jest.Mock).mockResolvedValue(mockDetectionResult);
         (tailscaleService.getMetadata as jest.Mock).mockReturnValue(undefined);
         (tailscaleService.buildMetadata as jest.Mock).mockReturnValue(mockMeta);
@@ -120,12 +122,10 @@ describe('Tailscale Command Handlers', () => {
             await handler();
 
             expect(tailscaleService.detect).toHaveBeenCalledWith(mockDevice);
-            expect(deviceService.updateDevice).toHaveBeenCalledWith(
+            expect(deviceService.mergeDeviceMetadata).toHaveBeenCalledWith(
                 mockDevice.id,
-                expect.objectContaining({
-                    host: '100.100.50.5',
-                    metadata: expect.objectContaining({ tailscale: mockMeta }),
-                })
+                { tailscale: mockMeta },
+                { host: '100.100.50.5' },
             );
         });
 
@@ -139,7 +139,7 @@ describe('Tailscale Command Handlers', () => {
             const handler = commandHandlers.get(COMMANDS.ENABLE_TAILSCALE)!;
             await handler();
 
-            expect(deviceService.updateDevice).not.toHaveBeenCalled();
+            expect(deviceService.mergeDeviceMetadata).not.toHaveBeenCalled();
             expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
                 expect.stringContaining('Tailscale not detected')
             );
@@ -172,14 +172,10 @@ describe('Tailscale Command Handlers', () => {
             const handler = commandHandlers.get(COMMANDS.DISABLE_TAILSCALE)!;
             await handler();
 
-            expect(deviceService.updateDevice).toHaveBeenCalledWith(
+            expect(deviceService.mergeDeviceMetadata).toHaveBeenCalledWith(
                 mockDevice.id,
-                expect.objectContaining({
-                    host: '192.168.1.50',
-                    metadata: expect.objectContaining({
-                        tailscale: expect.objectContaining({ decision: 'disabled' }),
-                    }),
-                })
+                { tailscale: expect.objectContaining({ decision: 'disabled' }) },
+                { host: '192.168.1.50' },
             );
         });
 
@@ -192,9 +188,10 @@ describe('Tailscale Command Handlers', () => {
             const handler = commandHandlers.get(COMMANDS.DISABLE_TAILSCALE)!;
             await handler();
 
-            expect(deviceService.updateDevice).toHaveBeenCalledWith(
+            expect(deviceService.mergeDeviceMetadata).toHaveBeenCalledWith(
                 mockDevice.id,
-                expect.objectContaining({ host: mockDevice.host })
+                expect.any(Object),
+                { host: mockDevice.host },
             );
         });
     });
@@ -209,7 +206,7 @@ describe('Tailscale Command Handlers', () => {
             await handler();
 
             expect(tailscaleService.detect).toHaveBeenCalledWith(mockDevice);
-            expect(deviceService.updateDevice).not.toHaveBeenCalled();
+            expect(deviceService.mergeDeviceMetadata).not.toHaveBeenCalled();
             expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
                 expect.stringContaining('100.100.50.5')
             );
@@ -247,6 +244,7 @@ jest.mock('../../services/tailscaleService', () => {
 describe('runTailscaleDetectionFlow', () => {
     const mockDeviceSvc = {
         updateDevice: jest.fn().mockResolvedValue(undefined),
+        mergeDeviceMetadata: jest.fn().mockResolvedValue(undefined),
     };
 
     const mockSvc = {
@@ -275,7 +273,7 @@ describe('runTailscaleDetectionFlow', () => {
         await runTailscaleDetectionFlow(mockDevice, mockSvc, mockDeviceSvc as any);
 
         expect(mockSvc.detect).not.toHaveBeenCalled();
-        expect(mockDeviceSvc.updateDevice).not.toHaveBeenCalled();
+        expect(mockDeviceSvc.mergeDeviceMetadata).not.toHaveBeenCalled();
     });
 
     it('does nothing when promptShown is already true', async () => {
@@ -297,9 +295,9 @@ describe('runTailscaleDetectionFlow', () => {
 
         await runTailscaleDetectionFlow(mockDevice, mockSvc, mockDeviceSvc as any);
 
-        expect(mockDeviceSvc.updateDevice).toHaveBeenCalledWith(
+        expect(mockDeviceSvc.mergeDeviceMetadata).toHaveBeenCalledWith(
             mockDevice.id,
-            expect.objectContaining({ metadata: expect.objectContaining({ tailscale: expect.objectContaining({ decision: 'undecided' }) }) })
+            { tailscale: expect.objectContaining({ decision: 'undecided' }) },
         );
         expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
     });
@@ -322,9 +320,9 @@ describe('runTailscaleDetectionFlow', () => {
         await runTailscaleDetectionFlow(mockDevice, mockSvc, mockDeviceSvc as any);
 
         expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
-        expect(mockDeviceSvc.updateDevice).toHaveBeenCalledWith(
+        expect(mockDeviceSvc.mergeDeviceMetadata).toHaveBeenCalledWith(
             mockDevice.id,
-            expect.objectContaining({ metadata: expect.objectContaining({ tailscale: expect.objectContaining({ decision: 'undecided' }) }) })
+            { tailscale: expect.objectContaining({ decision: 'undecided' }) },
         );
     });
 
@@ -339,12 +337,10 @@ describe('runTailscaleDetectionFlow', () => {
 
         await runTailscaleDetectionFlow(mockDevice, mockSvc, mockDeviceSvc as any);
 
-        expect(mockDeviceSvc.updateDevice).toHaveBeenCalledWith(
+        expect(mockDeviceSvc.mergeDeviceMetadata).toHaveBeenCalledWith(
             mockDevice.id,
-            expect.objectContaining({
-                host: '100.100.50.5',
-                metadata: expect.any(Object),
-            })
+            { tailscale: expect.any(Object) },
+            { host: '100.100.50.5' },
         );
     });
 
@@ -359,9 +355,11 @@ describe('runTailscaleDetectionFlow', () => {
 
         await runTailscaleDetectionFlow(mockDevice, mockSvc, mockDeviceSvc as any);
 
-        expect(mockDeviceSvc.updateDevice).toHaveBeenCalledWith(
+        // decision is 'disabled', so host is left unchanged — no deviceUpdates arg is passed
+        expect(mockDeviceSvc.mergeDeviceMetadata).toHaveBeenCalledWith(
             mockDevice.id,
-            expect.objectContaining({ host: mockDevice.host })
+            { tailscale: expect.any(Object) },
+            undefined,
         );
     });
 });

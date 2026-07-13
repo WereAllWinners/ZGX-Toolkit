@@ -98,9 +98,7 @@ export class ScheduledCheckupService {
                 firmwareResult.source,
             );
 
-        await deviceService.updateDevice(device.id, {
-            metadata: { ...device.metadata, lastCheckup: mergedCheckup, pendingUpdates },
-        });
+        await deviceService.mergeDeviceMetadata(device.id, { lastCheckup: mergedCheckup, pendingUpdates });
 
         logger.info('Checkup complete', {
             device: device.name,

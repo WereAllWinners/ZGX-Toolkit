@@ -66,9 +66,7 @@ export class PlatformProfileService {
     }
 
     async persist(device: Device, profile: PlatformProfile): Promise<void> {
-        await deviceService.updateDevice(device.id, {
-            metadata: { ...device.metadata, platformProfile: profile },
-        });
+        await deviceService.mergeDeviceMetadata(device.id, { platformProfile: profile });
     }
 
     // -------------------------------------------------------------------------

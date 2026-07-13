@@ -21,6 +21,7 @@ jest.mock('../../utils/sshConnection', () => ({
 jest.mock('../../services/deviceService', () => ({
     deviceService: {
         updateDevice: jest.fn().mockResolvedValue(undefined),
+        mergeDeviceMetadata: jest.fn().mockResolvedValue(undefined),
     },
 }));
 
@@ -39,7 +40,7 @@ import { executeSSHCommand } from '../../utils/sshConnection';
 import { deviceService } from '../../services/deviceService';
 
 const mockExecuteSSHCommand = executeSSHCommand as jest.MockedFunction<typeof executeSSHCommand>;
-const mockUpdateDevice = deviceService.updateDevice as jest.MockedFunction<typeof deviceService.updateDevice>;
+const mockMergeDeviceMetadata = deviceService.mergeDeviceMetadata as jest.MockedFunction<typeof deviceService.mergeDeviceMetadata>;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -196,10 +197,10 @@ describe('ManageabilityService', () => {
             expect(snapshot.software).toBeDefined();
             expect(snapshot.health).toBeDefined();
 
-            // Snapshot persisted to device store
-            expect(mockUpdateDevice).toHaveBeenCalledWith(
+            // Snapshot persisted to device store via the atomic metadata merge
+            expect(mockMergeDeviceMetadata).toHaveBeenCalledWith(
                 device.id,
-                expect.objectContaining({ metadata: expect.objectContaining({ manageabilitySnapshot: snapshot }) }),
+                { manageabilitySnapshot: snapshot },
             );
         });
 
@@ -253,8 +254,8 @@ describe('ManageabilityService', () => {
                 { readyTimeout: 5000 },
                 expect.anything(),
             );
-            // Must NOT call updateDevice — read-only posture check
-            expect(mockUpdateDevice).not.toHaveBeenCalled();
+            // Must NOT call updateDevice/mergeDeviceMetadata — read-only posture check
+            expect(mockMergeDeviceMetadata).not.toHaveBeenCalled();
         });
     });
 

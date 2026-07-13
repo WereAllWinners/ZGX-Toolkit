@@ -698,6 +698,69 @@ describe('DeviceService', () => {
             // At least one of the updates should be present
             expect(finalDevice!.port === 2222 || finalDevice!.host === '192.168.1.200').toBe(true);
         });
+
+        // F-1: two callers each snapshot device.metadata before acquiring the write lock,
+        // then merge and write. This documents that updateDevice's shallow spread is
+        // correct-by-design for full-field replacement — the bug is call sites building the
+        // merge from a stale pre-lock snapshot, not this method itself. Fixed by
+        // mergeDeviceMetadata below, which re-reads metadata inside the lock.
+        it('[baseline] raw updateDevice clobbers metadata when two callers race on a stale snapshot', async () => {
+            const device = await createTestDevice(service, 'F1 Baseline');
+            await service.updateDevice(device.id, { metadata: { seed: true } });
+            const staleSnapshot = store.get(device.id)!;
+
+            await Promise.all([
+                service.updateDevice(device.id, { metadata: { ...staleSnapshot.metadata, keyA: 'A' } }),
+                service.updateDevice(device.id, { metadata: { ...staleSnapshot.metadata, keyB: 'B' } }),
+            ]);
+
+            const final = store.get(device.id);
+            const bothSurvived = final?.metadata?.keyA === 'A' && final?.metadata?.keyB === 'B';
+            expect(bothSurvived).toBe(false);
+        });
+
+        it('mergeDeviceMetadata composes concurrent writes to different metadata keys', async () => {
+            const device = await createTestDevice(service, 'F1 Fixed');
+            await service.mergeDeviceMetadata(device.id, { seed: true });
+
+            await Promise.all([
+                service.mergeDeviceMetadata(device.id, { keyA: 'A' }),
+                service.mergeDeviceMetadata(device.id, { keyB: 'B' }),
+            ]);
+
+            const final = store.get(device.id);
+            expect(final?.metadata?.keyA).toBe('A');
+            expect(final?.metadata?.keyB).toBe('B');
+            expect(final?.metadata?.seed).toBe(true);
+        });
+
+        it('mergeDeviceMetadata composes a metadata write with a host-changing write racing it', async () => {
+            const device = await createTestDevice(service, 'F1 Fixed Host+Metadata');
+            await service.mergeDeviceMetadata(device.id, { seed: true });
+
+            await Promise.all([
+                service.mergeDeviceMetadata(device.id, { tailscale: { decision: 'enabled' } }, { host: '100.64.0.5' }),
+                service.mergeDeviceMetadata(device.id, { manageabilitySnapshot: { collectedAt: 'now' } }),
+            ]);
+
+            const final = store.get(device.id);
+            expect(final?.host).toBe('100.64.0.5');
+            expect(final?.metadata?.tailscale).toEqual({ decision: 'enabled' });
+            expect(final?.metadata?.manageabilitySnapshot).toEqual({ collectedAt: 'now' });
+            expect(final?.metadata?.seed).toBe(true);
+        });
+
+        it('getAll returns independent clones that cannot mutate the store', async () => {
+            const device = await createTestDevice(service, 'F1 Clone Test');
+            await service.mergeDeviceMetadata(device.id, { tag: 'original' });
+
+            const result = await service.getAllDevices();
+            const found = result.find(d => d.id === device.id)!;
+            found.metadata = { tag: 'tampered' };
+
+            const storeCopy = store.get(device.id);
+            expect(storeCopy?.metadata?.tag).toBe('original');
+        });
     });
 
     describe('Background updater', () => {

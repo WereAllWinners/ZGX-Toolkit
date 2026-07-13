@@ -257,18 +257,14 @@ export async function runTailscaleDetectionFlow(
     if (!result.tailnetIp) {
         if (result.onDevice || result.onClient) {
             const meta = svc.buildMetadata('undecided', result, false);
-            await deviceSvc.updateDevice(device.id, {
-                metadata: { ...(device.metadata ?? {}), tailscale: meta },
-            });
+            await deviceSvc.mergeDeviceMetadata(device.id, { tailscale: meta });
         }
         return;
     }
 
     if (!config.get<boolean>('tailscale.promptOnDetect', true)) {
         const meta = svc.buildMetadata('undecided', result, false);
-        await deviceSvc.updateDevice(device.id, {
-            metadata: { ...(device.metadata ?? {}), tailscale: meta },
-        });
+        await deviceSvc.mergeDeviceMetadata(device.id, { tailscale: meta });
         return;
     }
 
@@ -287,10 +283,11 @@ export async function runTailscaleDetectionFlow(
     const previousHost = decision === 'enabled' ? device.host : undefined;
     const meta = svc.buildMetadata(decision, result, true, previousHost);
 
-    await deviceSvc.updateDevice(device.id, {
-        host: decision === 'enabled' ? result.tailnetIp! : device.host,
-        metadata: { ...(device.metadata ?? {}), tailscale: meta },
-    });
+    await deviceSvc.mergeDeviceMetadata(
+        device.id,
+        { tailscale: meta },
+        decision === 'enabled' ? { host: result.tailnetIp! } : undefined,
+    );
 
     vscode.window.showInformationMessage(
         decision === 'enabled'
@@ -358,10 +355,11 @@ export async function pollManagedDeviceStatus(
                 polledAt,
             };
             const updatedMeta = { ...tsMeta, tailnetIp: peer.tailnetIp, status };
-            await deviceSvc.updateDevice(device.id, {
-                ...(ipChanged ? { host: peer.tailnetIp } : {}),
-                metadata: { ...(device.metadata ?? {}), tailscale: updatedMeta },
-            });
+            await deviceSvc.mergeDeviceMetadata(
+                device.id,
+                { tailscale: updatedMeta },
+                ipChanged ? { host: peer.tailnetIp } : undefined,
+            );
         }
         return;
     }
@@ -410,10 +408,11 @@ export async function pollManagedDeviceStatus(
             polledAt,
         };
         const updatedMeta = { ...tsMeta, tailnetIp: apiDevice.tailnetIp, status };
-        await deviceSvc.updateDevice(device.id, {
-            ...(ipChanged ? { host: apiDevice.tailnetIp } : {}),
-            metadata: { ...(device.metadata ?? {}), tailscale: updatedMeta },
-        });
+        await deviceSvc.mergeDeviceMetadata(
+            device.id,
+            { tailscale: updatedMeta },
+            ipChanged ? { host: apiDevice.tailnetIp } : undefined,
+        );
     }
 }
 

@@ -489,6 +489,7 @@ describe('pollManagedDeviceStatus', () => {
         mockDeviceSvc = {
             getAllDevices:  jest.fn().mockResolvedValue([managedDevice]),
             updateDevice:  jest.fn().mockResolvedValue(undefined),
+            mergeDeviceMetadata: jest.fn().mockResolvedValue(undefined),
         };
         mockApiSvc = {
             isConfigured: jest.fn().mockResolvedValue(false),
@@ -516,7 +517,7 @@ describe('pollManagedDeviceStatus', () => {
         mockDeviceSvc.getAllDevices.mockResolvedValue([]);
         detectSpy.mockResolvedValue({ up: true, peers: [] });
         await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
-        expect(mockDeviceSvc.updateDevice).not.toHaveBeenCalled();
+        expect(mockDeviceSvc.mergeDeviceMetadata).not.toHaveBeenCalled();
     });
 
     it('CLI path: updates device status with source:cli when client is up', async () => {
@@ -534,11 +535,11 @@ describe('pollManagedDeviceStatus', () => {
 
         await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
 
-        expect(mockDeviceSvc.updateDevice).toHaveBeenCalledTimes(1);
-        const [, updates] = mockDeviceSvc.updateDevice.mock.calls[0];
-        expect(updates.metadata.tailscale.status.source).toBe('cli');
-        expect(updates.metadata.tailscale.status.online).toBe(true);
-        expect(updates.metadata.tailscale.status.polledAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+        expect(mockDeviceSvc.mergeDeviceMetadata).toHaveBeenCalledTimes(1);
+        const [, patch] = mockDeviceSvc.mergeDeviceMetadata.mock.calls[0];
+        expect(patch.tailscale.status.source).toBe('cli');
+        expect(patch.tailscale.status.online).toBe(true);
+        expect(patch.tailscale.status.polledAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
     it('CLI path: propagates lastSeen for offline peer', async () => {
@@ -557,9 +558,9 @@ describe('pollManagedDeviceStatus', () => {
 
         await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
 
-        const [, updates] = mockDeviceSvc.updateDevice.mock.calls[0];
-        expect(updates.metadata.tailscale.status.online).toBe(false);
-        expect(updates.metadata.tailscale.status.lastSeen).toBe('2026-06-28T08:00:00Z');
+        const [, patch] = mockDeviceSvc.mergeDeviceMetadata.mock.calls[0];
+        expect(patch.tailscale.status.online).toBe(false);
+        expect(patch.tailscale.status.lastSeen).toBe('2026-06-28T08:00:00Z');
     });
 
     it('CLI path: skips device when no matching peer found', async () => {
@@ -570,7 +571,7 @@ describe('pollManagedDeviceStatus', () => {
         });
 
         await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
-        expect(mockDeviceSvc.updateDevice).not.toHaveBeenCalled();
+        expect(mockDeviceSvc.mergeDeviceMetadata).not.toHaveBeenCalled();
     });
 
     it('API fallback: updates device when client not on tailnet and API is configured', async () => {
@@ -586,11 +587,11 @@ describe('pollManagedDeviceStatus', () => {
 
         await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
 
-        expect(mockDeviceSvc.updateDevice).toHaveBeenCalledTimes(1);
-        const [, updates] = mockDeviceSvc.updateDevice.mock.calls[0];
-        expect(updates.metadata.tailscale.status.source).toBe('api');
-        expect(updates.metadata.tailscale.status.online).toBe(false);
-        expect(updates.metadata.tailscale.status.lastSeen).toBe('2026-06-28T07:00:00Z');
+        expect(mockDeviceSvc.mergeDeviceMetadata).toHaveBeenCalledTimes(1);
+        const [, patch] = mockDeviceSvc.mergeDeviceMetadata.mock.calls[0];
+        expect(patch.tailscale.status.source).toBe('api');
+        expect(patch.tailscale.status.online).toBe(false);
+        expect(patch.tailscale.status.lastSeen).toBe('2026-06-28T07:00:00Z');
     });
 
     it('API fallback: skips when client not on tailnet and API not configured', async () => {
@@ -598,7 +599,7 @@ describe('pollManagedDeviceStatus', () => {
         mockApiSvc.isConfigured.mockResolvedValue(false);
 
         await pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc);
-        expect(mockDeviceSvc.updateDevice).not.toHaveBeenCalled();
+        expect(mockDeviceSvc.mergeDeviceMetadata).not.toHaveBeenCalled();
     });
 
     it('API fallback: logs warning and skips on API error', async () => {
@@ -607,6 +608,6 @@ describe('pollManagedDeviceStatus', () => {
         mockApiSvc.listDevices.mockRejectedValue(new Error('Network error'));
 
         await expect(pollManagedDeviceStatus(mockDeviceSvc, mockApiSvc)).resolves.toBeUndefined();
-        expect(mockDeviceSvc.updateDevice).not.toHaveBeenCalled();
+        expect(mockDeviceSvc.mergeDeviceMetadata).not.toHaveBeenCalled();
     });
 });

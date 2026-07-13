@@ -342,10 +342,7 @@ export class AdminDashboardViewController extends BaseViewController {
             }
 
             const meta = tailscaleService.buildMetadata('enabled', result, true, device.host);
-            await this.deviceService.updateDevice(device.id, {
-                host: result.tailnetIp,
-                metadata: { ...(device.metadata ?? {}), tailscale: meta },
-            });
+            await this.deviceService.mergeDeviceMetadata(device.id, { tailscale: meta }, { host: result.tailnetIp });
             vscode.window.showInformationMessage(
                 `✓ ${device.name} is now routing over Tailscale (${result.tailnetIp}).`
             );
@@ -376,12 +373,9 @@ export class AdminDashboardViewController extends BaseViewController {
                 decisionChangedAt: now,
             };
 
-            await this.deviceService.updateDevice(device.id, {
-                host: previousHost ?? device.host,
-                metadata: { ...(device.metadata ?? {}), tailscale: meta },
-            });
-
             const restoredHost = previousHost ?? device.host;
+            await this.deviceService.mergeDeviceMetadata(device.id, { tailscale: meta }, { host: restoredHost });
+
             vscode.window.showInformationMessage(
                 `${device.name} is now connecting via ${restoredHost}. Tailscale routing disabled.`
             );
@@ -422,9 +416,7 @@ export class AdminDashboardViewController extends BaseViewController {
                 existing?.promptShown ?? false,
                 existing?.previousHost
             );
-            await this.deviceService.updateDevice(device.id, {
-                metadata: { ...(device.metadata ?? {}), tailscale: meta },
-            });
+            await this.deviceService.mergeDeviceMetadata(device.id, { tailscale: meta });
 
             const where = result.onDevice && result.onClient ? 'device and client'
                 : result.onDevice ? 'device' : 'client';

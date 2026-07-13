@@ -26,8 +26,9 @@ jest.mock('../../services/manageabilityService', () => ({
 
 jest.mock('../../services/deviceService', () => ({
     deviceService: {
-        updateDevice:   jest.fn().mockResolvedValue(undefined),
-        getAllDevices:  jest.fn(),
+        updateDevice:         jest.fn().mockResolvedValue(undefined),
+        mergeDeviceMetadata:  jest.fn().mockResolvedValue(undefined),
+        getAllDevices:        jest.fn(),
     },
 }));
 
@@ -150,6 +151,7 @@ describe('ScheduledCheckupService', () => {
         (platformProfileService.detect      as jest.Mock).mockResolvedValue({});
         (manageabilityService.collectInventory as jest.Mock).mockResolvedValue({});
         (deviceService.updateDevice         as jest.Mock).mockResolvedValue(undefined);
+        (deviceService.mergeDeviceMetadata  as jest.Mock).mockResolvedValue(undefined);
     });
 
     afterEach(() => {
@@ -280,7 +282,7 @@ describe('ScheduledCheckupService', () => {
             expect(toolKeys).toContain('firmware_update_availability');
         });
 
-        it('stores CheckupResult in metadata.lastCheckup via updateDevice', async () => {
+        it('stores CheckupResult in metadata.lastCheckup via mergeDeviceMetadata', async () => {
             (manageabilityService.runTool as jest.Mock).mockResolvedValue(
                 makeUpdateEnvelope('apt', [
                     { package: 'curl', current_version: '7.81.0', available_version: '8.0.0' },
@@ -289,21 +291,19 @@ describe('ScheduledCheckupService', () => {
 
             await service.runCheckupNow(device);
 
-            expect(deviceService.updateDevice).toHaveBeenCalledWith(
+            expect(deviceService.mergeDeviceMetadata).toHaveBeenCalledWith(
                 device.id,
                 expect.objectContaining({
-                    metadata: expect.objectContaining({
-                        lastCheckup: expect.objectContaining({
-                            source: 'apt',
-                            status: 'ok',
-                            availableUpdates: expect.arrayContaining([
-                                expect.objectContaining({
-                                    package:          'curl',
-                                    currentVersion:   '7.81.0',
-                                    availableVersion: '8.0.0',
-                                }),
-                            ]),
-                        }),
+                    lastCheckup: expect.objectContaining({
+                        source: 'apt',
+                        status: 'ok',
+                        availableUpdates: expect.arrayContaining([
+                            expect.objectContaining({
+                                package:          'curl',
+                                currentVersion:   '7.81.0',
+                                availableVersion: '8.0.0',
+                            }),
+                        ]),
                     }),
                 }),
             );

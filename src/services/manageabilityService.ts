@@ -166,9 +166,7 @@ export class ManageabilityService {
 
         logger.info('Inventory collection complete', { device: device.name, successCount, total: 7 });
 
-        await deviceService.updateDevice(device.id, {
-            metadata: { ...device.metadata, manageabilitySnapshot: snapshot },
-        });
+        await deviceService.mergeDeviceMetadata(device.id, { manageabilitySnapshot: snapshot });
 
         return snapshot;
     }
@@ -307,9 +305,7 @@ export class ManageabilityService {
 
         // Persist positive result so future renders skip this SSH check.
         if (has) {
-            await deviceService.updateDevice(device.id, {
-                metadata: { ...device.metadata, collectorInstalled: true },
-            });
+            await deviceService.mergeDeviceMetadata(device.id, { collectorInstalled: true });
         }
 
         return has;
@@ -361,9 +357,7 @@ export class ManageabilityService {
             }
         } else {
             logger.info('zgx-collector installed system-wide', { device: device.name });
-            await deviceService.updateDevice(device.id, {
-                metadata: { ...device.metadata, collectorInstalled: true },
-            });
+            await deviceService.mergeDeviceMetadata(device.id, { collectorInstalled: true });
             return { success: true };
         }
 
@@ -376,9 +370,7 @@ export class ManageabilityService {
 
         if (userResult.success) {
             logger.info('zgx-collector installed to ~/.local/bin', { device: device.name });
-            await deviceService.updateDevice(device.id, {
-                metadata: { ...device.metadata, collectorInstalled: true },
-            });
+            await deviceService.mergeDeviceMetadata(device.id, { collectorInstalled: true });
             return { success: true };
         }
 

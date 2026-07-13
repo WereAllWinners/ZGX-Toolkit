@@ -26,22 +26,24 @@ export class DeviceStore implements IDeviceStore {
 
   /**
    * Get a device by its unique identifier.
-   * 
+   * Returns a deep clone so callers can't mutate stored state through a live reference.
+   *
    * @param id The device identifier
    * @returns The device object or undefined if not found
    */
   public get(id: string): Device | undefined {
-    return this.devices.get(id);
+    const device = this.devices.get(id);
+    return device ? structuredClone(device) : undefined;
   }
 
   /**
    * Get all devices as an array.
-   * Returns a new array to prevent external mutations.
-   * 
+   * Returns a new array of deep clones to prevent external mutations.
+   *
    * @returns Array of all devices
    */
   public getAll(): Device[] {
-    return Array.from(this.devices.values());
+    return Array.from(this.devices.values()).map(device => structuredClone(device));
   }
 
   /**

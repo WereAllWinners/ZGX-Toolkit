@@ -44,6 +44,7 @@ jest.mock('../../services/platformProfileService', () => ({
 jest.mock('../../services/deviceService', () => ({
     deviceService: {
         updateDevice: jest.fn().mockResolvedValue(undefined),
+        mergeDeviceMetadata: jest.fn().mockResolvedValue(undefined),
     },
 }));
 
@@ -310,7 +311,7 @@ describe('UpdateReconciliationService — Task 03', () => {
     // =========================================================================
 
     describe('buildApplyPlan() — read-only guarantee', () => {
-        it('does not call deviceService.updateDevice', async () => {
+        it('does not call deviceService.updateDevice or mergeDeviceMetadata', async () => {
             (manageabilityService.runTool as jest.Mock).mockResolvedValue(
                 makeToolResult([{ pkg: 'curl', cur: '7.0', avail: '8.0' }]),
             );
@@ -318,6 +319,7 @@ describe('UpdateReconciliationService — Task 03', () => {
             await service.buildApplyPlan(makeDevice(), ['curl']);
 
             expect(deviceService.updateDevice).not.toHaveBeenCalled();
+            expect(deviceService.mergeDeviceMetadata).not.toHaveBeenCalled();
         });
 
         it('only runs the simulation SSH command (no state-changing commands)', async () => {
@@ -427,16 +429,12 @@ describe('UpdateReconciliationService — Task 03', () => {
 
             await service.executeApplyPlan(makeDevice(), makeMinimalPlan());
 
-            const calls = (deviceService.updateDevice as jest.Mock).mock.calls;
+            const calls = (deviceService.mergeDeviceMetadata as jest.Mock).mock.calls;
             expect(calls[0][1]).toMatchObject({
-                metadata: expect.objectContaining({
-                    pendingUpdates: expect.objectContaining({ status: 'applying' }),
-                }),
+                pendingUpdates: expect.objectContaining({ status: 'applying' }),
             });
             expect(calls[1][1]).toMatchObject({
-                metadata: expect.objectContaining({
-                    pendingUpdates: expect.objectContaining({ status: 'applied' }),
-                }),
+                pendingUpdates: expect.objectContaining({ status: 'applied' }),
             });
         });
 
@@ -447,16 +445,12 @@ describe('UpdateReconciliationService — Task 03', () => {
 
             await service.executeApplyPlan(makeDevice(), makeMinimalPlan());
 
-            const calls = (deviceService.updateDevice as jest.Mock).mock.calls;
+            const calls = (deviceService.mergeDeviceMetadata as jest.Mock).mock.calls;
             expect(calls[0][1]).toMatchObject({
-                metadata: expect.objectContaining({
-                    pendingUpdates: expect.objectContaining({ status: 'applying' }),
-                }),
+                pendingUpdates: expect.objectContaining({ status: 'applying' }),
             });
             expect(calls[1][1]).toMatchObject({
-                metadata: expect.objectContaining({
-                    pendingUpdates: expect.objectContaining({ status: 'error' }),
-                }),
+                pendingUpdates: expect.objectContaining({ status: 'error' }),
             });
         });
 
@@ -468,16 +462,12 @@ describe('UpdateReconciliationService — Task 03', () => {
             const result = await service.executeApplyPlan(makeDevice(), makeMinimalPlan());
 
             expect(result.requiresPassword).toBe(true);
-            const calls = (deviceService.updateDevice as jest.Mock).mock.calls;
+            const calls = (deviceService.mergeDeviceMetadata as jest.Mock).mock.calls;
             expect(calls[0][1]).toMatchObject({
-                metadata: expect.objectContaining({
-                    pendingUpdates: expect.objectContaining({ status: 'applying' }),
-                }),
+                pendingUpdates: expect.objectContaining({ status: 'applying' }),
             });
             expect(calls[1][1]).toMatchObject({
-                metadata: expect.objectContaining({
-                    pendingUpdates: expect.objectContaining({ status: 'available' }),
-                }),
+                pendingUpdates: expect.objectContaining({ status: 'available' }),
             });
         });
     });

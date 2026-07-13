@@ -575,9 +575,7 @@ export class UpdateReconciliationService {
         const pending = device.metadata?.pendingUpdates as PendingUpdatesState | undefined;
         if (!pending) { return; }
         const updated: PendingUpdatesState = { ...pending, firmwareStatus: status };
-        await deviceService.updateDevice(device.id, {
-            metadata: { ...device.metadata, pendingUpdates: updated },
-        });
+        await deviceService.mergeDeviceMetadata(device.id, { pendingUpdates: updated });
     }
 
     private async persistFirmwareApplied(device: Device, applied: string[]): Promise<void> {
@@ -589,9 +587,7 @@ export class UpdateReconciliationService {
             firmwareStatus: 'applied',
             firmwareCandidates: (pending.firmwareCandidates ?? []).filter(c => !appliedSet.has(c.package)),
         };
-        await deviceService.updateDevice(device.id, {
-            metadata: { ...device.metadata, pendingUpdates: updated },
-        });
+        await deviceService.mergeDeviceMetadata(device.id, { pendingUpdates: updated });
     }
 
     private nativeProvider(pm: string | undefined): ApplyProvider {
@@ -681,9 +677,7 @@ export class UpdateReconciliationService {
         if (!pending) { return; }
         const updated: PendingUpdatesState = { ...pending, status };
         if (note !== undefined) { (updated as any).note = note; }
-        await deviceService.updateDevice(device.id, {
-            metadata: { ...device.metadata, pendingUpdates: updated },
-        });
+        await deviceService.mergeDeviceMetadata(device.id, { pendingUpdates: updated });
     }
 
     private async persistApplied(device: Device, applied: string[]): Promise<void> {
@@ -696,9 +690,7 @@ export class UpdateReconciliationService {
             status: remaining.length > 0 ? 'available' : 'applied',
             candidates: remaining,
         };
-        await deviceService.updateDevice(device.id, {
-            metadata: { ...device.metadata, pendingUpdates: updated },
-        });
+        await deviceService.mergeDeviceMetadata(device.id, { pendingUpdates: updated });
     }
 }
 

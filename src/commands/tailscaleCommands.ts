@@ -65,10 +65,7 @@ async function enableTailscaleForDeviceCommand(): Promise<void> {
 
                 const previousHost = device.host;
                 const meta = tailscaleService.buildMetadata('enabled', result, true, previousHost);
-                await deviceService.updateDevice(device.id, {
-                    host: result.tailnetIp,
-                    metadata: { ...(device.metadata ?? {}), tailscale: meta },
-                });
+                await deviceService.mergeDeviceMetadata(device.id, { tailscale: meta }, { host: result.tailnetIp });
 
                 vscode.window.showInformationMessage(
                     `✓ ${device.name} will now connect over Tailscale (${result.tailnetIp}).`
@@ -109,12 +106,8 @@ async function disableTailscaleForDeviceCommand(): Promise<void> {
             decisionChangedAt: now,
         };
 
-        await deviceService.updateDevice(device.id, {
-            host: previousHost ?? device.host,
-            metadata: { ...(device.metadata ?? {}), tailscale: meta },
-        });
-
         const restoredHost = previousHost ?? device.host;
+        await deviceService.mergeDeviceMetadata(device.id, { tailscale: meta }, { host: restoredHost });
         vscode.window.showInformationMessage(
             `${device.name} will now connect using ${restoredHost}. ` +
             `Tailscale routing is disabled.`

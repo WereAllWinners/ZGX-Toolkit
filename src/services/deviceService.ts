@@ -161,6 +161,66 @@ export class DeviceService {
     }
 
     /**
+     * Atomically merge into a device's metadata. Re-reads the current device
+     * inside the write lock and applies a shallow-per-key merge of the metadata
+     * sub-object, so concurrent writers targeting different keys never clobber
+     * each other's write from a stale pre-lock snapshot (unlike passing a
+     * pre-computed `{ metadata: { ...device.metadata, key } }` to updateDevice).
+     * Top-level device fields (e.g. host) can be updated in the same critical
+     * section via the optional `deviceUpdates` arg.
+     *
+     * @param id device identifier
+     * @param metadataPatch keys to merge into the device's existing metadata
+     * @param deviceUpdates optional top-level Device fields to update alongside metadata
+     * @returns Promise resolving when update is complete
+     * @throws Error if device is not found
+     */
+    public async mergeDeviceMetadata(
+        id: string,
+        metadataPatch: Record<string, unknown>,
+        deviceUpdates?: Partial<Omit<Device, 'id' | 'metadata'>>,
+    ): Promise<void> {
+        logger.info('Merging device metadata', { id, keys: Object.keys(metadataPatch) });
+
+        return new Promise<void>((resolve, reject) => {
+            this.storeLock.writeLock((release) => {
+                try {
+                    const current = this.config.store.get(id);
+
+                    if (!current) {
+                        const msg = `device not found for metadata merge: ${id}`;
+                        logger.error(msg);
+                        reject(new Error(msg));
+                        return;
+                    }
+
+                    const metadata = { ...current.metadata, ...metadataPatch };
+                    const success = this.config.store.update(id, { ...deviceUpdates, metadata });
+
+                    if (!success) {
+                        reject(new Error(`Failed to update device: ${id}`));
+                        return;
+                    }
+
+                    logger.debug('device metadata merged successfully', { id, keys: Object.keys(metadataPatch) });
+                    this.config.telemetry.trackEvent({
+                        eventType: TelemetryEventType.Device,
+                        action: 'update'
+                    });
+
+                    resolve();
+                } catch (error) {
+                    logger.error('Failed to merge device metadata', { error, id });
+                    this.config.telemetry.trackError({ eventType: TelemetryEventType.Error, error: error as Error, context: 'device.mergeMetadata' });
+                    reject(new Error(`Failed to merge device metadata ${id}: ${error instanceof Error ? error.message : String(error)}`));
+                } finally {
+                    release();
+                }
+            });
+        });
+    }
+
+    /**
      * Delete a device from the system.
      * 
      * @param id device identifier

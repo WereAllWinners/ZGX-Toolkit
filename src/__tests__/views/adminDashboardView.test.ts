@@ -94,6 +94,7 @@ function makeDeps(deviceOverrides: Partial<jest.Mocked<DeviceService>> = {}) {
         getAllDevices: jest.fn().mockResolvedValue([]),
         createDevice: jest.fn(),
         updateDevice: jest.fn(),
+        mergeDeviceMetadata: jest.fn().mockResolvedValue(undefined),
         deleteDevice: jest.fn(),
         subscribe: jest.fn().mockReturnValue(() => {}),
         ...deviceOverrides,

@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.3.2 (2026-07-13)
+
+### Sudo Delivery Hardening (Security Fix — F-2)
+
+#### Fixed
+
+- **Sudo password delivery no longer inferred from command text**: `executeCommandOnClient` used to decide whether to write a supplied sudo password to a command's stdin by checking `command.startsWith('sudo -S')`. Any command that reached `sudo -S` indirectly — e.g. `installCollector`'s system-wide install path, which pipes a base64-encoded script through `sudo tee` (`echo '...' | base64 -d | sudo -S tee ...`) — never started with that literal text, so the password silently failed to send even when supplied. This was a live, reproducible bug in the collector system-install flow.
+- **Fix**: added an explicit `sendSudoPassword` flag to `SSHCommandExecutionOptions`. The password is now written to stdin only when a caller both supplies `sudoPassword` *and* explicitly sets `sendSudoPassword: true` — never inferred from the command string. Every caller across the extension that sends a sudo password was updated to set the new flag: the 3 manageability call sites the fix targeted, plus **11 more found via a full-suite regression run** in upstream (non-manageability) features that share the same SSH utility — app installation/uninstallation, DNS service registration, and ConnectX NIC network configuration. Leaving those unfixed would have silently broken previously-working sudo flows in those features.
+- **Output redaction**: command output (stdout/stderr) from any sudo-invoking apply is now scrubbed before being logged or shown in a notification — lines matching known sudo/PAM prompt patterns are stripped, and the literal password (if present in output) is redacted.
+- **Documentation**: SECURITY.md and docs/manageability.md now document the recommended enterprise configuration — scoped `NOPASSWD` sudoers rules for the specific `apt-get`/`dnf`/`zypper`/`fwupdmgr` invocations the extension runs — so a production deployment never needs to transmit a password at all. The interactive password prompt remains the fallback.
+
+### Package/Firmware Name Allowlisting (Security Fix — F-3)
+
+#### Fixed
+
+- **Shell-injection hardening for the update-apply path**: package and firmware names selected for apply were previously trusted based only on matching a name the device itself reported as an available update — a weak guarantee for a fleet tool, since it only requires an already-compromised device to defeat. Added a syntactic allowlist (`isValidPackageName`/`assertValidPackageNames` in `src/utils/packageName.ts`) as a second, independent gate: any name containing shell metacharacters (`;`, `` ` ``, `$(`, `&&`, spaces, newlines, etc.) now aborts the entire apply with a clear error, rather than being silently dropped or interpolated into a shell command. Applied at `executeApplyPlan` (both package and firmware names) and at `simulate()`'s dry-run preview inside `buildApplyPlan`, since a malicious device-reported name could otherwise still reach a real (if `--dry-run`/`-s`-flagged) shell command.
+
+#### Files changed
+
+- `src/utils/sshConnection.ts` — `sendSudoPassword` option, stdin-write gate no longer inspects the command string
+- `src/utils/string.ts` — new `redactSudoOutput()` helper
+- `src/utils/packageName.ts` — new allowlist validator
+- `src/services/manageabilityService.ts` — `sendSudoPassword: true` at `applyUpdates` and `installCollector` (the confirmed live bug); output redaction
+- `src/services/updateReconciliationService.ts` — `sendSudoPassword: true` at `executeApplyPlan`; output redaction; `assertValidPackageNames()` in `executeApplyPlan` and `simulate()`
+- `src/services/appInstallationService.ts` — `sendSudoPassword: true` at the install/uninstall sudo paths and `validatePassword`
+- `src/services/dnsRegistrationService.ts` — `sendSudoPassword: true` at service-file creation, Avahi restart, and `validatePassword`
+- `src/services/connectxGroupService.ts` — `sendSudoPassword: true` at netplan write/apply/check/remove
+- `SECURITY.md`, `docs/manageability.md` — sudo password handling model + NOPASSWD sudoers guidance
+
+---
+
 ## v2.3.1 (2026-07-13)
 
 ### Atomic Device Metadata Updates (Security/Reliability Fix — F-1)

@@ -14,6 +14,13 @@
 // Shared envelope
 // ---------------------------------------------------------------------------
 
+/**
+ * Canonical fields are the superset already emitted by
+ * DGX_spark_management/bin/_envelope.py; resources/zgx-collector emits the
+ * same shape as of v1.3.0. `tool`/`timestamp` remain non-optional since every
+ * known collector (past and present) has always emitted them; the rest are
+ * optional so older collector output (pre-unification) still parses.
+ */
 export interface ManageabilityEnvelope<T> {
     tool: string;
     timestamp: string;
@@ -21,6 +28,13 @@ export interface ManageabilityEnvelope<T> {
     data: T;
     /** On-device path to the generated artifact (e.g. diagnostic bundle). */
     evidence_path?: string;
+    tool_name?: string;
+    tool_version?: string;
+    timestamp_utc?: string;
+    device_id?: { serial: string; uuid: string; hostname: string };
+    summary?: string;
+    artifacts?: string[];
+    errors?: { code: string; message: string; detail?: string }[];
 }
 
 // ---------------------------------------------------------------------------

@@ -122,6 +122,39 @@ describe('ManageabilityService', () => {
             );
         });
 
+        it('parses the superset envelope shape (F-10) without breaking status/data extraction', async () => {
+            // Mirrors what resources/zgx-collector v1.3.0 / _envelope.py actually emit —
+            // the canonical fields plus the tool/timestamp TS-compat aliases.
+            const rawEnvelope = {
+                tool_name: 'device_identity',
+                tool_version: '1.3.0',
+                timestamp_utc: '2026-07-13T00:00:00Z',
+                device_id: { serial: '', uuid: '', hostname: 'dgx-spark-01' },
+                status: 'ok',
+                summary: 'device_identity collected successfully',
+                data: {
+                    hostname: 'dgx-spark-01',
+                    product_name: 'HP ZGX Nano G1n AI Station',
+                    manufacturer: 'HP',
+                    board_name: '8EA3',
+                    bios_version: '5.36_0ACUM026',
+                    bios_date: '03/23/2026',
+                },
+                artifacts: [],
+                errors: [],
+                tool: 'device_identity',
+                timestamp: '2026-07-13T00:00:00Z',
+            };
+            mockExecuteSSHCommand.mockResolvedValueOnce(makeSSHSuccess(JSON.stringify(rawEnvelope)));
+
+            const result = await service.runTool<DeviceIdentity>(device, 'device_identity');
+
+            expect(result.success).toBe(true);
+            expect(result.envelope?.status).toBe('ok');
+            expect(result.envelope?.data.hostname).toBe('dgx-spark-01');
+            expect(result.envelope?.data.bios_version).toBe('5.36_0ACUM026');
+        });
+
         it('returns failure with error when SSH command fails', async () => {
             mockExecuteSSHCommand.mockResolvedValueOnce(makeSSHFailure('Permission denied'));
 

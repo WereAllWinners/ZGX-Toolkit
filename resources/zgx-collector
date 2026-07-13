@@ -14,7 +14,7 @@ Output: JSON envelope  {"tool":..., "timestamp":..., "status":"ok", "data":{...}
 import json, subprocess, sys, os, shutil, glob
 from datetime import datetime, timezone
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 # Non-interactive SSH sessions often have a stripped PATH that omits the directories
 # where NVIDIA/AMD tools live.  Prepend the common install prefixes so that
@@ -31,9 +31,6 @@ for _p in ('/usr/local/cuda/bin', '/usr/local/bin', '/usr/local/sbin',
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
-def envelope(tool, data, status="ok"):
-    return {"tool": tool, "timestamp": now_iso(), "status": status, "version": VERSION, "data": data}
-
 def run(cmd, timeout=10):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -47,6 +44,46 @@ def read_file(path, default=""):
             return f.read().strip()
     except Exception:
         return default
+
+def read_dmi(field, default=""):
+    """Read a DMI field directly from sysfs (root-less)."""
+    return read_file(f"/sys/class/dmi/id/{field}", default)
+
+def device_id_block():
+    """Root-less device identity block for the JSON envelope: serial, uuid,
+    hostname. Serial/uuid are root-only readable on many distros and will be
+    empty in that case rather than escalating via sudo."""
+    hostname, _ = run(["hostname", "-f"])
+    if not hostname:
+        hostname, _ = run(["hostname"])
+    return {
+        "serial": read_dmi("product_serial"),
+        "uuid": read_dmi("product_uuid"),
+        "hostname": hostname,
+    }
+
+def envelope(tool, data, status="ok", errors=None):
+    errors = errors or []
+    summary_map = {
+        "ok": f"{tool} collected successfully",
+        "partial": f"{tool} collected with {len(errors)} error(s)",
+        "error": f"{tool} failed to collect data",
+    }
+    return {
+        # Canonical envelope fields (matches DGX_spark_management/bin/_envelope.py)
+        "tool_name": tool,
+        "tool_version": VERSION,
+        "timestamp_utc": now_iso(),
+        "device_id": device_id_block(),
+        "status": status,
+        "summary": summary_map.get(status, f"{tool}: {status}"),
+        "data": data,
+        "artifacts": [],
+        "errors": errors,
+        # TypeScript ManageabilityEnvelope aliases (unchanged from v1.x)
+        "tool": tool,
+        "timestamp": now_iso(),
+    }
 
 def safe_float(v, default=None):
     try:

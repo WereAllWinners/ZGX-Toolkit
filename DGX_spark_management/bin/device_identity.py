@@ -5,16 +5,16 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 import _envelope as env
 
-# DMI field name → dmidecode -s type
+# DMI field name → sysfs file under /sys/class/dmi/id/ (root-less; no sudo)
 _DMI_FIELDS = {
-    "manufacturer":  "system-manufacturer",
-    "product_name":  "system-product-name",
-    "serial_number": "system-serial-number",
-    "uuid":          "system-uuid",
-    "bios_vendor":   "bios-vendor",
-    "bios_version":  "bios-version",
-    "bios_date":     "bios-release-date",
-    "board_name":    "baseboard-product-name",
+    "manufacturer":  "sys_vendor",
+    "product_name":  "product_name",
+    "serial_number": "product_serial",
+    "uuid":          "product_uuid",
+    "bios_vendor":   "bios_vendor",
+    "bios_version":  "bios_version",
+    "bios_date":     "bios_date",
+    "board_name":    "board_name",
 }
 
 
@@ -25,12 +25,12 @@ def main():
     did = env.device_id()
     data["hostname"] = did["hostname"]
 
-    for key, dmi_type in _DMI_FIELDS.items():
-        val = env._run(f"sudo dmidecode -s {dmi_type} 2>/dev/null || true")
+    for key, sysfs_field in _DMI_FIELDS.items():
+        val = env.read_dmi(sysfs_field)
         if not val:
             errors.append({
                 "code": f"dmi_{key}_missing",
-                "message": f"DMI field '{dmi_type}' not available",
+                "message": f"DMI field '{sysfs_field}' not available",
                 "detail": "",
             })
         data[key] = val

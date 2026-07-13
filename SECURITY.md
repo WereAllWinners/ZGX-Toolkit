@@ -60,8 +60,12 @@ the upstream ZGX Toolkit policy and can be disabled in VS Code settings.
 
 ### Privilege
 
-Collector scripts use `sudo` only for `dmidecode` calls (hardware identity
-reads). No other collector operation requires elevated privileges.
+Collector scripts do not use `sudo`. Device and BIOS identity (serial,
+UUID, vendor, version, date) are read directly from `/sys/class/dmi/id/`.
+Serial and UUID are root-only readable on many distributions and will
+return empty values in that case rather than escalating privileges — this
+is a soft degradation, not an error. No collector operation requires
+elevated privileges.
 
 ### Sudo password handling
 

@@ -17,10 +17,23 @@ def _run(cmd, timeout=10):
         return ""
 
 
+def read_dmi(field, default=""):
+    """Read a DMI field directly from sysfs (root-less). Some fields (e.g.
+    product_serial, product_uuid) are root-only readable on many distros and
+    will return the default rather than escalating via sudo."""
+    try:
+        with open(f"/sys/class/dmi/id/{field}") as f:
+            return f.read().strip()
+    except Exception:
+        return default
+
+
 def device_id():
-    """Return the device_id block used by all collectors."""
-    serial = _run("sudo dmidecode -s system-serial-number 2>/dev/null || true")
-    uuid = _run("sudo dmidecode -s system-uuid 2>/dev/null || true")
+    """Return the device_id block used by all collectors. Root-less: reads
+    DMI identity directly from sysfs rather than shelling out to dmidecode
+    with sudo."""
+    serial = read_dmi("product_serial")
+    uuid = read_dmi("product_uuid")
     hostname = socket.gethostname()
     return {"serial": serial, "uuid": uuid, "hostname": hostname}
 

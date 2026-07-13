@@ -27,8 +27,9 @@ Copy the scripts to the target device once:
 scp -r DGX_spark_management/ USER@DEVICE_HOST:/usr/local/lib/
 ```
 
-Scripts require Python 3.8+, standard Linux utilities (`ip`, `lsblk`,
-`uname`, `ethtool`), and `sudo` access for `dmidecode` calls.
+Scripts require Python 3.8+ and standard Linux utilities (`ip`, `lsblk`,
+`uname`, `ethtool`). No `sudo` access is required — device and BIOS
+identity are read directly from `/sys/class/dmi/id/`.
 
 ## Collector scripts
 
@@ -62,6 +63,9 @@ Every collector outputs:
   "errors": []
 }
 ```
+
+`resources/zgx-collector` (the live, actively-installed collector) emits the
+same envelope shape as of v1.3.0.
 
 ## Safety rules
 

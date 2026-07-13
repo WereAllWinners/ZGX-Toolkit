@@ -9,22 +9,14 @@ import _envelope as env
 
 def _collect_bios():
     errors = []
-    vendor = ""
-    version = ""
-    release_date = ""
+    # Root-less: read BIOS DMI fields directly from sysfs rather than
+    # shelling out to `sudo dmidecode -t bios`.
+    vendor = env.read_dmi("bios_vendor")
+    version = env.read_dmi("bios_version")
+    release_date = env.read_dmi("bios_date")
 
-    bios_out = env._run("sudo dmidecode -t bios 2>/dev/null || true", timeout=15)
-    if bios_out:
-        for line in bios_out.splitlines():
-            line = line.strip()
-            if line.startswith("Vendor:"):
-                vendor = line.split(":", 1)[1].strip()
-            elif line.startswith("Version:"):
-                version = line.split(":", 1)[1].strip()
-            elif line.startswith("Release Date:"):
-                release_date = line.split(":", 1)[1].strip()
-    else:
-        errors.append({"code": "bios_info_missing", "message": "dmidecode -t bios returned no output", "detail": ""})
+    if not (vendor or version or release_date):
+        errors.append({"code": "bios_info_missing", "message": "BIOS DMI fields not available under /sys/class/dmi/id/", "detail": ""})
 
     return {"vendor": vendor, "version": version, "release_date": release_date}, errors
 

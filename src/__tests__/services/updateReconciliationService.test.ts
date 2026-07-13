@@ -269,6 +269,67 @@ describe('UpdateReconciliationService', () => {
             const result = await service.parsePinnedPackages('/policy.yml');
             expect(result.size).toBe(0);
         });
+
+        // F-5: js-yaml replaces the hand-rolled regex scanner, fail-closed on
+        // ambiguity — a malformed file must not silently look like "nothing pinned".
+
+        it('parses flow-style maps (the old regex scanner could not)', async () => {
+            const content = 'pinned_packages: {cuda-toolkit: "12.0.0", libssl3: 3.0.7}';
+            (fs.promises.readFile as jest.Mock).mockResolvedValue(content);
+
+            const result = await service.parsePinnedPackages('/policy.yml');
+            expect(result.get('cuda-toolkit')).toBe('12.0.0');
+            expect(result.get('libssl3')).toBe('3.0.7');
+        });
+
+        it('returns empty map for a genuinely blank file (no throw)', async () => {
+            (fs.promises.readFile as jest.Mock).mockResolvedValue('   \n  \n');
+
+            const result = await service.parsePinnedPackages('/policy.yml');
+            expect(result.size).toBe(0);
+        });
+
+        it('throws when pinned_packages is a list instead of a mapping', async () => {
+            const content = 'pinned_packages:\n  - cuda-toolkit\n  - nvidia-driver\n';
+            (fs.promises.readFile as jest.Mock).mockResolvedValue(content);
+
+            await expect(service.parsePinnedPackages('/policy.yml')).rejects.toThrow(/must be a mapping/);
+        });
+
+        it('throws when a pinned_packages value is neither a string nor a number', async () => {
+            const content = 'pinned_packages:\n  cuda-toolkit:\n    nested: true\n';
+            (fs.promises.readFile as jest.Mock).mockResolvedValue(content);
+
+            await expect(service.parsePinnedPackages('/policy.yml')).rejects.toThrow(/must be a string or number/);
+        });
+
+        it('throws when the top-level document is not a mapping', async () => {
+            const content = '- cuda-toolkit\n- nvidia-driver\n';
+            (fs.promises.readFile as jest.Mock).mockResolvedValue(content);
+
+            await expect(service.parsePinnedPackages('/policy.yml')).rejects.toThrow(/expected a YAML mapping/);
+        });
+
+        it('throws on genuinely malformed YAML (bad indentation)', async () => {
+            const content = 'pinned_packages:\n  cuda-toolkit: 1.0\n foo: bar\n';
+            (fs.promises.readFile as jest.Mock).mockResolvedValue(content);
+
+            await expect(service.parsePinnedPackages('/policy.yml')).rejects.toThrow(/could not be parsed as YAML/);
+        });
+
+        it('throws on tab-indented YAML', async () => {
+            const content = 'pinned_packages:\n\tcuda-toolkit: 1.0\n';
+            (fs.promises.readFile as jest.Mock).mockResolvedValue(content);
+
+            await expect(service.parsePinnedPackages('/policy.yml')).rejects.toThrow(/could not be parsed as YAML/);
+        });
+
+        it('throws on a multi-document YAML stream rather than silently picking one', async () => {
+            const content = 'pinned_packages:\n  cuda-toolkit: "12.0.0"\n---\nother: doc\n';
+            (fs.promises.readFile as jest.Mock).mockResolvedValue(content);
+
+            await expect(service.parsePinnedPackages('/policy.yml')).rejects.toThrow(/could not be parsed as YAML/);
+        });
     });
 
     // -------------------------------------------------------------------------
@@ -333,6 +394,30 @@ describe('UpdateReconciliationService', () => {
             const { candidates, ansibleExclusions } = await service.reconcile(device);
             expect(candidates).toHaveLength(1);
             expect(ansibleExclusions).toHaveLength(1);
+        });
+
+        it('blocks (throws + shows a visible error) rather than silently treating a malformed policy file as unpinned (F-5)', async () => {
+            const vscode = require('vscode');
+            (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+                get: jest.fn().mockReturnValue('/policy.yml'),
+            });
+
+            (fs.promises.readFile as jest.Mock).mockResolvedValue(
+                'pinned_packages:\n  cuda-toolkit: 1.0\n foo: bar\n' // bad indentation
+            );
+            (platformProfileService.getProfile as jest.Mock).mockReturnValue(makeProfile());
+
+            const device = makeDevice({
+                lastCheckup: {
+                    source: 'apt',
+                    availableUpdates: [makeUpdate('cuda-toolkit', '11.0', '12.5')],
+                },
+            });
+
+            await expect(service.reconcile(device)).rejects.toThrow(/could not be parsed/);
+            expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+                expect.stringContaining('Ansible policy file could not be parsed'),
+            );
         });
     });
 

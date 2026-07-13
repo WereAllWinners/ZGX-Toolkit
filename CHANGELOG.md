@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.3.4 (2026-07-13)
+
+### Ansible Pin Parser: js-yaml, Fail-Closed (Security/Correctness Fix — F-5)
+
+#### Fixed
+
+- **Hand-rolled regex YAML scanner replaced with a real YAML parser**: `parsePinnedPackages()` used a line-by-line regex scanner that only understood one exact shape of `pinned_packages:` — flow-style maps, YAML lists, tabs, and multi-document files all silently produced an **empty** map, which the update-apply path treats as "nothing is pinned." This was a fail-**open** policy bug: an operator with a real-but-not-exactly-matching inventory file could believe packages were pinned when the parser silently wasn't reading any of them. Replaced with `js-yaml`.
+- **Fail-closed on ambiguity**: a missing policy file (or one with no `pinned_packages` key) still silently yields an empty map — that's a legitimate "no policy configured" state. But a file that **exists and cannot be parsed** (invalid YAML syntax, or `pinned_packages` not a flat string/number-valued mapping) now **blocks** the checkup or apply for that device with a visible error message, rather than silently proceeding as if nothing were pinned. This is a caller-visible behavior change — added error handling at both call sites (`reconcile()`, `buildApplyPlan()`) via a new `resolvePinnedPackages()` helper, since neither previously had any (the parser itself never used to throw).
+- **New pin schema docs**: docs/manageability.md documents the exact expected YAML shape — none existed before.
+
+#### Files changed
+
+- `src/services/updateReconciliationService.ts` — `parsePinnedPackages()` rewritten on `js-yaml`; new private `resolvePinnedPackages()` blocking helper
+- `package.json` — `js-yaml` (dependency), `@types/js-yaml` (devDependency)
+- `docs/manageability.md` — new "Pin schema" subsection
+
+---
+
 ## v2.3.3 (2026-07-13)
 
 ### Collector Envelope: Remove Sudo Dependency (Security Fix — F-4)

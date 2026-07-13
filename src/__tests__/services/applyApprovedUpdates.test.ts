@@ -197,6 +197,25 @@ describe('UpdateReconciliationService — Task 03', () => {
             );
         });
 
+        it('blocks (throws + shows a visible error) rather than silently treating a malformed policy file as unpinned (F-5)', async () => {
+            const vscode = require('vscode');
+            (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+                get: jest.fn().mockReturnValue('/policy.yml'),
+            });
+            (fs.promises.readFile as jest.Mock).mockResolvedValue(
+                'pinned_packages:\n  curl: 7.0\n foo: bar\n', // bad indentation
+            );
+            (manageabilityService.runTool as jest.Mock).mockResolvedValue(
+                makeToolResult([{ pkg: 'curl', cur: '7.0', avail: '8.0' }]),
+            );
+
+            await expect(service.buildApplyPlan(makeDevice(), ['curl'])).rejects.toThrow(/could not be parsed/);
+            expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+                expect.stringContaining('Ansible policy file could not be parsed'),
+            );
+            expect(executeSSHCommand).not.toHaveBeenCalled();
+        });
+
         it('drops a package now held on the device with reason now-held', async () => {
             (platformProfileService.getProfile as jest.Mock).mockReturnValue(
                 makeProfile({ heldPackages: ['curl'] }),

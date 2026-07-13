@@ -4,6 +4,7 @@
  */
 
 import * as fs from 'fs';
+import * as yaml from 'js-yaml';
 import * as vscode from 'vscode';
 import { Device } from '../types/devices';
 import { PlatformProfile } from '../types/platformProfile';
@@ -60,9 +61,7 @@ export class UpdateReconciliationService {
             .getConfiguration('zgxToolkit.manageability')
             .get<string>('ansibleInventoryPath', '');
 
-        const pinnedPackages = inventoryPath
-            ? await this.parsePinnedPackages(inventoryPath)
-            : new Map<string, string>();
+        const pinnedPackages = await this.resolvePinnedPackages(inventoryPath, device);
 
         const profile = platformProfileService.getProfile(device);
 
@@ -183,14 +182,20 @@ export class UpdateReconciliationService {
     // -------------------------------------------------------------------------
 
     /**
-     * Parse a simple ZGX YAML policy file for pinned package versions.
+     * Parse a ZGX Ansible-style YAML policy file for pinned package versions.
      *
-     * Expected format:
+     * Expected format (top-level `pinned_packages` mapping of package name to
+     * pinned version — see docs/manageability.md for the full schema):
      *   pinned_packages:
      *     cuda-toolkit: "12.0.0"
      *     nvidia-driver: 550.54.15
      *
-     * Returns an empty map on any error (file not found, unreadable, bad format).
+     * Fail-closed: a missing file is not an error (no policy configured is a
+     * legitimate, common state) and silently yields an empty map, as does a
+     * file that parses but has no `pinned_packages` key. A file that EXISTS
+     * but cannot be parsed as YAML, or whose `pinned_packages` isn't a flat
+     * string/number-valued mapping, THROWS — callers must not treat "couldn't
+     * parse the policy" the same as "nothing is pinned".
      */
     async parsePinnedPackages(inventoryPath: string): Promise<Map<string, string>> {
         const result = new Map<string, string>();
@@ -210,49 +215,70 @@ export class UpdateReconciliationService {
             return result;
         }
 
+        let parsed: unknown;
         try {
-            let inPinnedBlock = false;
-            for (const rawLine of content.split('\n')) {
-                const line = rawLine.trimEnd();
-
-                // Skip comments and blank lines
-                if (!line.trim() || line.trim().startsWith('#')) {
-                    continue;
-                }
-
-                // Detect the pinned_packages: header (may be indented)
-                if (/^\s*pinned_packages\s*:/.test(line)) {
-                    inPinnedBlock = true;
-                    continue;
-                }
-
-                if (!inPinnedBlock) {
-                    continue;
-                }
-
-                // Stop if we hit another top-level key (non-indented, ends with colon)
-                if (/^[^\s]/.test(line) && line.trim().endsWith(':')) {
-                    break;
-                }
-
-                // Parse indented "  key: value" or "  key: 'value'" or '  key: "value"'
-                const match = line.match(/^\s+([^:]+?)\s*:\s*["']?([^"'#\n]+?)["']?\s*(?:#.*)?$/);
-                if (match) {
-                    const pkg = match[1].trim();
-                    const ver = match[2].trim();
-                    if (pkg && ver) {
-                        result.set(pkg, ver);
-                    }
-                }
-            }
+            // load() (not loadAll()) deliberately rejects multi-document
+            // streams rather than silently picking one.
+            parsed = yaml.load(content);
         } catch (err) {
-            logger.warn('UpdateReconciliationService: failed to parse policy file', {
-                path: inventoryPath,
-                error: err instanceof Error ? err.message : String(err),
+            const message = err instanceof Error ? err.message : String(err);
+            logger.error('UpdateReconciliationService: Ansible policy file is not valid YAML', {
+                path: inventoryPath, error: message,
             });
+            throw new Error(`Ansible policy file at ${inventoryPath} could not be parsed as YAML: ${message}`);
+        }
+
+        if (parsed == null) {
+            // Genuinely empty/blank file — no policy configured, not an error.
+            return result;
+        }
+
+        if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error(`Ansible policy file at ${inventoryPath}: expected a YAML mapping at the top level.`);
+        }
+
+        const pinnedRaw = (parsed as Record<string, unknown>).pinned_packages;
+        if (pinnedRaw == null) {
+            // No pinned_packages key — legitimately nothing pinned via this file.
+            return result;
+        }
+        if (typeof pinnedRaw !== 'object' || Array.isArray(pinnedRaw)) {
+            throw new Error(`Ansible policy file at ${inventoryPath}: 'pinned_packages' must be a mapping of package name to version.`);
+        }
+
+        for (const [pkg, ver] of Object.entries(pinnedRaw as Record<string, unknown>)) {
+            if (typeof ver === 'string' || typeof ver === 'number') {
+                result.set(pkg, String(ver));
+            } else {
+                throw new Error(`Ansible policy file at ${inventoryPath}: 'pinned_packages.${pkg}' must be a string or number version, got ${typeof ver}.`);
+            }
         }
 
         return result;
+    }
+
+    /**
+     * Resolve the pinned-packages map for a device, blocking (with a visible
+     * notification) rather than silently proceeding as "nothing is pinned"
+     * when the configured policy file exists but can't be parsed. An empty
+     * `inventoryPath` (no policy configured) is not an error.
+     */
+    private async resolvePinnedPackages(inventoryPath: string, device: Device): Promise<Map<string, string>> {
+        if (!inventoryPath) {
+            return new Map<string, string>();
+        }
+        try {
+            return await this.parsePinnedPackages(inventoryPath);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.error('UpdateReconciliationService: Ansible policy file could not be parsed — blocking to avoid silently applying unpinned packages', {
+                device: device.name, path: inventoryPath, error: message,
+            });
+            vscode.window.showErrorMessage(
+                `ZGX Toolkit: Ansible policy file could not be parsed (${message}). Blocking this operation for ${device.name} rather than risk applying an update that should have been pinned.`,
+            );
+            throw new Error(`Ansible policy file could not be parsed: ${message}`);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -307,9 +333,7 @@ export class UpdateReconciliationService {
             .getConfiguration('zgxToolkit.manageability')
             .get<string>('ansibleInventoryPath', '');
 
-        const pinnedPackages = inventoryPath
-            ? await this.parsePinnedPackages(inventoryPath)
-            : new Map<string, string>();
+        const pinnedPackages = await this.resolvePinnedPackages(inventoryPath, device);
 
         // 2. Package path: fresh update-availability query + re-filters
         let freshAvailable: AvailableUpdate[] = [];

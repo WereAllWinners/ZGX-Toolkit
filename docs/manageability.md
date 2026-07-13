@@ -127,6 +127,34 @@ remediation playbook.
 To establish a baseline, run **Collect Device Inventory** on a known-good
 device. Subsequent drift checks compare against that snapshot.
 
+### Pin schema
+
+`zgxToolkit.manageability.ansibleInventoryPath` points at a YAML file
+containing a top-level `pinned_packages` mapping of package name to pinned
+version:
+
+```yaml
+pinned_packages:
+  cuda-toolkit: "12.0.0"
+  nvidia-driver: 550.54.15
+```
+
+Pinned packages are excluded from both scheduled-checkup candidates and
+manual applies, regardless of what version the device reports as available.
+
+The file is parsed as real YAML (flow-style maps, quoted/unquoted values,
+and comments are all supported) — it is **not** a hand-rolled format, so
+standard YAML syntax rules apply. Two failure modes are handled
+differently:
+
+- **No file configured, or the file doesn't exist** — treated as "no pins",
+  silently. This is the normal state for a device with no Ansible policy.
+- **The file exists but cannot be parsed** (invalid YAML syntax, or
+  `pinned_packages` isn't a flat mapping of name → string/number) — **fails
+  closed**: the checkup or apply for that device is blocked and a visible
+  error is shown, rather than silently proceeding as if nothing were
+  pinned. Fix the file and re-run the operation.
+
 ## Configuration
 
 Under **Settings → ZGX Toolkit**:

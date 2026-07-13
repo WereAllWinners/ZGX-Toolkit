@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.3.3 (2026-07-13)
+
+### Collector Envelope: Remove Sudo Dependency (Security Fix — F-4)
+
+#### Fixed
+
+- **`sudo` removed from the on-device collector suite**: `DGX_spark_management/bin/_envelope.py`'s `device_id()` shelled out to `sudo dmidecode -s system-serial-number/-system-uuid` for every collector invocation — directly contradicting the documented read-only/no-sudo collector guarantee, and able to hang on a device with interactive sudo. Replaced with a root-less sysfs read (`/sys/class/dmi/id/product_serial`, `/product_uuid`), returning empty string on any read failure (permission or missing-path) rather than escalating.
+- **Two more instances found during implementation, fixed in the same commit**: `device_identity.py`'s per-field DMI lookup (`sudo dmidecode -s <type>` for manufacturer/product/serial/uuid/BIOS/board fields) and `firmware_reporter.py`'s BIOS collector (`sudo dmidecode -t bios`) had the identical problem — missed by the original review, which only named `_envelope.py`. Both now read the equivalent `/sys/class/dmi/id/*` files directly via a new shared `read_dmi()` helper. Verified end-to-end on real DGX Spark hardware: all collector scripts now run with zero sudo prompts; serial/UUID correctly degrade to empty (root-only readable on this hardware) while manufacturer, product name, board name, and all BIOS fields populate correctly (root-readable).
+- **Scoped deviation from the literal fix**: `_run()`, the shared shell-command helper used by ~10 other collector scripts for legitimate pipelines (`| grep`, `| awk`, `| tr`) and interpolated arguments, was deliberately left untouched — changing its `shell=True` signature would have broken those callers. The fix is scoped to giving the three DMI-reading call sites their own subprocess-free implementation instead.
+- **Docs corrected**: SECURITY.md's "Privilege" section and docs/manageability.md's collector-install prerequisites both claimed collectors need `sudo` for `dmidecode` — both false claims corrected (only SECURITY.md was named in the original review).
+
+### Unified JSON Envelope Contract (F-10)
+
+#### Changed
+
+- `resources/zgx-collector` (the actually-live, installed collector — bumped to v1.3.0) now emits the same envelope shape as `DGX_spark_management/bin/_envelope.py`: `tool_name`, `tool_version`, `timestamp_utc`, `device_id`, `status`, `summary`, `data`, `artifacts`, `errors`, plus the pre-existing `tool`/`timestamp` TypeScript-compat aliases. Previously the two collector suites emitted different shapes (a minimal 5-field version vs. an 11-field version), which silently parsed as `undefined` on the TypeScript side wherever they diverged.
+- `ManageabilityEnvelope<T>` broadened with the new fields as optional additions — purely additive, since the only fields any TypeScript code has ever read from a parsed envelope are `.status`, `.data`, and `.evidence_path`.
+
+#### Files changed
+
+- `DGX_spark_management/bin/_envelope.py` — root-less `read_dmi()`/`device_id()`
+- `DGX_spark_management/bin/device_identity.py` — DMI fields read via sysfs, not `sudo dmidecode -s`
+- `DGX_spark_management/bin/firmware_reporter.py` — BIOS fields read via sysfs, not `sudo dmidecode -t bios`
+- `resources/zgx-collector` — unified `envelope()` builder, `device_id_block()`, `read_dmi()`; version bumped to 1.3.0
+- `src/types/manageability.ts` — `ManageabilityEnvelope<T>` broadened
+- `SECURITY.md`, `docs/manageability.md` — corrected sudo claims
+
+---
+
 ## v2.3.2 (2026-07-13)
 
 ### Sudo Delivery Hardening (Security Fix — F-2)

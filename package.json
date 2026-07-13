@@ -2,7 +2,7 @@
     "name": "zgx-toolkit",
     "displayName": "ZGX Toolkit",
     "description": "Manage HP ZGX/DGX Spark devices with SSH, device inventory, health monitoring, diagnostics, and Ansible policy enforcement.",
-    "version": "2.3.0",
+    "version": "2.3.1",
     "publisher": "WereAllWinners",
     "icon": "resources/logo-marketplace.png",
     "galleryBanner": {

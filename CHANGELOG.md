@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.3.1 (2026-07-13)
+
+### Atomic Device Metadata Updates (Security/Reliability Fix — F-1)
+
+#### Fixed
+
+- **Concurrent metadata-write race**: Every manageability writer (Tailscale poller, scheduled checkups, collector install, platform-profile detection, update reconciliation) previously did a read-modify-write on `device.metadata`: capture a snapshot, then later write `{ ...snapshot, someKey: value }`. Two overlapping operations on the same device — e.g. a Tailscale status poll and a scheduled checkup landing at the same time — could each compute their merge from a stale pre-lock snapshot, so the second write silently erased the first's keys. This could revert a device's `host` or drop Tailscale status without any error surfaced.
+- **Fix**: added `DeviceService.mergeDeviceMetadata()`, which re-reads the device and computes the metadata merge *inside* the existing write lock, so concurrent writers targeting different keys can never clobber each other. All known read-modify-write call sites — 15 in `src/services/`, plus 5 more found via a broader sweep in the Admin Dashboard and Tailscale command handlers — were converted to use it.
+- **Defense in depth**: `DeviceStore.get()`/`getAll()` now return deep clones (`structuredClone`) instead of live references, so callers can no longer mutate stored device state through a held reference. Verified no code in the extension relies on reference identity for `Device` objects.
+
+#### Files changed
+
+- `src/services/deviceService.ts` — new `mergeDeviceMetadata()` method
+- `src/store/deviceStore.ts` — `get()`/`getAll()`/`getState()` now return deep clones
+- `src/services/manageabilityService.ts` — 4 call sites converted
+- `src/services/platformProfileService.ts` — 1 call site converted
+- `src/services/scheduledCheckupService.ts` — 1 call site converted
+- `src/services/tailscaleService.ts` — 5 call sites converted
+- `src/services/updateReconciliationService.ts` — 4 call sites converted
+- `src/views/admin/adminDashboardViewController.ts` — 3 call sites converted
+- `src/commands/tailscaleCommands.ts` — 2 call sites converted
+
+---
+
 ## v2.3.0 (2026-06-29)
 
 ### Firmware / BIOS Update Integration

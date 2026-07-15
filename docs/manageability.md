@@ -19,6 +19,12 @@ VS Code Extension (TypeScript)
 All data collection is **agentless** — no persistent software is installed
 on target devices beyond the collector scripts in `DGX_spark_management/bin/`.
 
+Collecting a full device inventory runs 7 collector tools; these all share a
+single SSH connection per device rather than opening one connection per
+tool. Scheduled fleet checkups process devices with bounded concurrency
+(see `zgxToolkit.scheduledCheckups.maxConcurrentDevices` below) rather than
+one at a time.
+
 ## Installing collector scripts on a device
 
 Copy the scripts to the target device once:
@@ -165,6 +171,7 @@ Under **Settings → ZGX Toolkit**:
 | `zgxToolkit.manageability.healthPollIntervalMinutes` | `5` | Health check interval |
 | `zgxToolkit.manageability.collectorPath` | `/usr/local/lib/DGX_spark_management/bin` | Collector script path on device |
 | `zgxToolkit.manageability.ansibleInventoryPath` | `""` | Ansible inventory file path |
+| `zgxToolkit.scheduledCheckups.maxConcurrentDevices` | `5` | Maximum devices checked up simultaneously during a scheduled fleet run |
 
 ## Troubleshooting
 

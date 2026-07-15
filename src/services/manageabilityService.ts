@@ -15,9 +15,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { Client as SSHClient } from 'ssh2';
 import { Device } from '../types/devices';
 import { logger } from '../utils/logger';
-import { executeSSHCommand } from '../utils/sshConnection';
+import { createSSHConnection, executeCommandOnClient, executeSSHCommand } from '../utils/sshConnection';
 import { redactSudoOutput } from '../utils/string';
 import {
     DGX_TOOL_COMMANDS,
@@ -92,11 +93,16 @@ export class ManageabilityService {
     /**
      * Execute a single DGX management tool on the device and return the
      * parsed JSON envelope. Handles SSH errors and JSON parse errors separately.
+     *
+     * When `client` is provided, the command runs on that already-connected
+     * SSH client instead of opening a new connection — the caller is then
+     * responsible for the connection's lifecycle (see `collectInventory`).
      */
     async runTool<T>(
         device: Device,
         toolKey: DGXToolKey,
         options?: RunToolOptions,
+        client?: SSHClient,
     ): Promise<ManageabilityResult<T>> {
         const baseCmd = DGX_TOOL_COMMANDS[toolKey];
         const args = options?.args?.length ? ' ' + options.args.join(' ') : '';
@@ -108,10 +114,10 @@ export class ManageabilityService {
 
         logger.debug('Running manageability tool', { device: device.name, toolKey, command });
 
-        const result = await executeSSHCommand(device, command, MANAGEABILITY_CONN_OPTS, {
-            operationName: `manageability:${toolKey}`,
-            timeoutSeconds,
-        });
+        const executionOptions = { operationName: `manageability:${toolKey}`, timeoutSeconds };
+        const result = client
+            ? await executeCommandOnClient(client, command, executionOptions)
+            : await executeSSHCommand(device, command, MANAGEABILITY_CONN_OPTS, executionOptions);
 
         if (!result.success) {
             const error = result.error?.message ?? result.stderr ?? 'SSH command failed';
@@ -133,43 +139,76 @@ export class ManageabilityService {
     }
 
     /**
-     * Run all 6 collector tools in parallel and assemble a ManageabilitySnapshot.
-     * Uses Promise.allSettled so a single tool failure does not abort the rest.
-     * The snapshot is persisted to device.metadata.manageabilitySnapshot.
+     * Run all 7 collector tools over a single shared SSH connection and
+     * assemble a ManageabilitySnapshot. Uses Promise.allSettled so a single
+     * tool failure does not abort the rest. The snapshot is persisted to
+     * device.metadata.manageabilitySnapshot.
+     *
+     * Opens exactly one SSH connection for the whole collection (previously
+     * each of the 7 tools opened and tore down its own connection) — closed
+     * once in `finally` regardless of how the collection turns out.
      */
     async collectInventory(device: Device): Promise<ManageabilitySnapshot> {
         logger.info('Collecting full inventory', { device: device.name });
 
-        const [identity, osBuild, hardware, firmware, drivers, software, health] = await Promise.allSettled([
-            this.runTool<DeviceIdentity>(device, 'device_identity'),
-            this.runTool<OSBuildIdentity>(device, 'os_build_identity'),
-            this.runTool<HardwareConfig>(device, 'hardware_config'),
-            this.runTool<FirmwareReport>(device, 'firmware_reporter'),
-            this.runTool<DriverInventory>(device, 'driver_inventory_reporter'),
-            this.runTool<SoftwareInventory>(device, 'software_inventory_reporter'),
-            this.runTool<DiagHealthResult>(device, 'spark_diagctl'),
-        ]);
+        let client: SSHClient | undefined;
+        try {
+            client = await createSSHConnection(device, MANAGEABILITY_CONN_OPTS);
+        } catch (err) {
+            // Mirrors executeSSHCommand's own behavior: a connection failure is
+            // reported per-tool, not thrown — every tool "fails" the same way a
+            // per-tool connection attempt would have failed before this change.
+            logger.warn('collectInventory: SSH connection failed', {
+                device: device.name,
+                error: err instanceof Error ? err.message : String(err),
+            });
+            const snapshot: ManageabilitySnapshot = { collectedAt: new Date().toISOString() };
+            logger.info('Inventory collection complete', { device: device.name, successCount: 0, total: 7 });
+            await deviceService.mergeDeviceMetadata(device.id, { manageabilitySnapshot: snapshot });
+            return snapshot;
+        }
 
-        const snapshot: ManageabilitySnapshot = {
-            collectedAt: new Date().toISOString(),
-            identity:  identity.status  === 'fulfilled' && identity.value.success  ? identity.value.envelope  : undefined,
-            osBuild:   osBuild.status   === 'fulfilled' && osBuild.value.success   ? osBuild.value.envelope   : undefined,
-            hardware:  hardware.status  === 'fulfilled' && hardware.value.success  ? hardware.value.envelope  : undefined,
-            firmware:  firmware.status  === 'fulfilled' && firmware.value.success  ? firmware.value.envelope  : undefined,
-            drivers:   drivers.status   === 'fulfilled' && drivers.value.success   ? drivers.value.envelope   : undefined,
-            software:  software.status  === 'fulfilled' && software.value.success  ? software.value.envelope  : undefined,
-            health:    health.status    === 'fulfilled' && health.value.success    ? health.value.envelope    : undefined,
-        };
+        try {
+            const [identity, osBuild, hardware, firmware, drivers, software, health] = await Promise.allSettled([
+                this.runTool<DeviceIdentity>(device, 'device_identity', undefined, client),
+                this.runTool<OSBuildIdentity>(device, 'os_build_identity', undefined, client),
+                this.runTool<HardwareConfig>(device, 'hardware_config', undefined, client),
+                this.runTool<FirmwareReport>(device, 'firmware_reporter', undefined, client),
+                this.runTool<DriverInventory>(device, 'driver_inventory_reporter', undefined, client),
+                this.runTool<SoftwareInventory>(device, 'software_inventory_reporter', undefined, client),
+                this.runTool<DiagHealthResult>(device, 'spark_diagctl', undefined, client),
+            ]);
 
-        const successCount = [identity, osBuild, hardware, firmware, drivers, software, health]
-            .filter(r => r.status === 'fulfilled' && (r as PromiseFulfilledResult<ManageabilityResult<unknown>>).value.success)
-            .length;
+            const snapshot: ManageabilitySnapshot = {
+                collectedAt: new Date().toISOString(),
+                identity:  identity.status  === 'fulfilled' && identity.value.success  ? identity.value.envelope  : undefined,
+                osBuild:   osBuild.status   === 'fulfilled' && osBuild.value.success   ? osBuild.value.envelope   : undefined,
+                hardware:  hardware.status  === 'fulfilled' && hardware.value.success  ? hardware.value.envelope  : undefined,
+                firmware:  firmware.status  === 'fulfilled' && firmware.value.success  ? firmware.value.envelope  : undefined,
+                drivers:   drivers.status   === 'fulfilled' && drivers.value.success   ? drivers.value.envelope   : undefined,
+                software:  software.status  === 'fulfilled' && software.value.success  ? software.value.envelope  : undefined,
+                health:    health.status    === 'fulfilled' && health.value.success    ? health.value.envelope    : undefined,
+            };
 
-        logger.info('Inventory collection complete', { device: device.name, successCount, total: 7 });
+            const successCount = [identity, osBuild, hardware, firmware, drivers, software, health]
+                .filter(r => r.status === 'fulfilled' && (r as PromiseFulfilledResult<ManageabilityResult<unknown>>).value.success)
+                .length;
 
-        await deviceService.mergeDeviceMetadata(device.id, { manageabilitySnapshot: snapshot });
+            logger.info('Inventory collection complete', { device: device.name, successCount, total: 7 });
 
-        return snapshot;
+            await deviceService.mergeDeviceMetadata(device.id, { manageabilitySnapshot: snapshot });
+
+            return snapshot;
+        } finally {
+            try {
+                client.end();
+            } catch (err) {
+                logger.debug('collectInventory: error closing SSH client', {
+                    device: device.name,
+                    error: err instanceof Error ? err.message : String(err),
+                });
+            }
+        }
     }
 
     /**

@@ -13,6 +13,7 @@ import {
 } from '../types/scheduledUpdates';
 import { FirmwareUpdateAvailabilityData, UpdateAvailabilityData } from '../types/manageability';
 import { logger } from '../utils/logger';
+import { runWithConcurrencyLimit } from '../utils/concurrency';
 import { manageabilityService } from './manageabilityService';
 import { platformProfileService } from './platformProfileService';
 import { deviceService } from './deviceService';
@@ -144,7 +145,11 @@ export class ScheduledCheckupService {
             return;
         }
 
-        for (const device of devices.filter(d => d.isSetup)) {
+        const maxConcurrentDevices = vscode.workspace
+            .getConfiguration('zgxToolkit.scheduledCheckups')
+            .get<number>('maxConcurrentDevices', 5);
+
+        await runWithConcurrencyLimit(devices.filter(d => d.isSetup), maxConcurrentDevices, async device => {
             try {
                 await this.runCheckupNow(device);
             } catch (err) {
@@ -153,7 +158,7 @@ export class ScheduledCheckupService {
                     error: err instanceof Error ? err.message : String(err),
                 });
             }
-        }
+        });
     }
 
     private async runFirmwareUpdateAvailability(device: Device): Promise<{

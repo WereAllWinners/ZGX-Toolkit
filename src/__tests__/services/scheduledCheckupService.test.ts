@@ -72,6 +72,7 @@ jest.mock('../../utils/logger', () => ({
 import { manageabilityService } from '../../services/manageabilityService';
 import { deviceService }         from '../../services/deviceService';
 import { platformProfileService } from '../../services/platformProfileService';
+import { updateReconciliationService } from '../../services/updateReconciliationService';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -397,6 +398,120 @@ describe('ScheduledCheckupService', () => {
 
             expect(result.checkedAt >= before).toBe(true);
             expect(result.checkedAt <= after).toBe(true);
+        });
+    });
+
+    // -------------------------------------------------------------------------
+    // runAllDevices() — bounded fleet concurrency (F-6)
+    // -------------------------------------------------------------------------
+
+    describe('runAllDevices() concurrency (F-6)', () => {
+        beforeEach(() => {
+            // Real timers so the controllable-delay mock below behaves normally.
+            jest.useRealTimers();
+        });
+
+        it('never runs more than maxConcurrentDevices checkups at once', async () => {
+            const devices = Array.from({ length: 6 }, (_, i) =>
+                makeDevice({ id: `dev-${i}`, name: `dev-${i}` }));
+            (deviceService.getAllDevices as jest.Mock).mockResolvedValue(devices);
+
+            (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+                get: jest.fn().mockImplementation((key: string, def?: unknown) =>
+                    key === 'maxConcurrentDevices' ? 2 : def),
+            });
+
+            let inFlight = 0;
+            let maxInFlight = 0;
+            (manageabilityService.collectInventory as jest.Mock).mockImplementation(async () => {
+                inFlight++;
+                maxInFlight = Math.max(maxInFlight, inFlight);
+                await new Promise(resolve => setTimeout(resolve, 15));
+                inFlight--;
+                return {};
+            });
+            (manageabilityService.runTool as jest.Mock).mockResolvedValue(makeUpdateEnvelope('apt', []));
+
+            await (service as any).runAllDevices();
+
+            expect(maxInFlight).toBeLessThanOrEqual(2);
+            expect(maxInFlight).toBeGreaterThan(1); // actually overlapped, not fully serial
+        });
+
+        it('eventually processes every setup device', async () => {
+            const devices = Array.from({ length: 5 }, (_, i) =>
+                makeDevice({ id: `dev-${i}`, name: `dev-${i}` }));
+            (deviceService.getAllDevices as jest.Mock).mockResolvedValue(devices);
+
+            (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+                get: jest.fn().mockImplementation((key: string, def?: unknown) =>
+                    key === 'maxConcurrentDevices' ? 2 : def),
+            });
+
+            (manageabilityService.collectInventory as jest.Mock).mockResolvedValue({});
+            (manageabilityService.runTool as jest.Mock).mockResolvedValue(makeUpdateEnvelope('apt', []));
+
+            const processed: string[] = [];
+            (platformProfileService.detect as jest.Mock).mockImplementation(async (device: Device) => {
+                processed.push(device.id);
+                return {};
+            });
+
+            await (service as any).runAllDevices();
+
+            expect(processed.slice().sort()).toEqual(devices.map(d => d.id).sort());
+        });
+
+        it('skips devices that are not set up', async () => {
+            const devices = [
+                makeDevice({ id: 'setup-1', isSetup: true }),
+                makeDevice({ id: 'not-setup', isSetup: false }),
+            ];
+            (deviceService.getAllDevices as jest.Mock).mockResolvedValue(devices);
+
+            (manageabilityService.collectInventory as jest.Mock).mockResolvedValue({});
+            (manageabilityService.runTool as jest.Mock).mockResolvedValue(makeUpdateEnvelope('apt', []));
+
+            const processed: string[] = [];
+            (platformProfileService.detect as jest.Mock).mockImplementation(async (device: Device) => {
+                processed.push(device.id);
+                return {};
+            });
+
+            await (service as any).runAllDevices();
+
+            expect(processed).toEqual(['setup-1']);
+        });
+
+        it('one device failing does not stop the others from being checked up', async () => {
+            // reconcile() has no internal catch in runCheckupNow (unlike detect()/
+            // collectInventory(), which are already soft-failed inside runCheckupNow
+            // itself) — a rejection here is the realistic way a single device's
+            // checkup actually throws all the way out to runAllDevices' per-item catch.
+            const devices = [
+                makeDevice({ id: 'ok-1' }),
+                makeDevice({ id: 'broken' }),
+                makeDevice({ id: 'ok-2' }),
+            ];
+            (deviceService.getAllDevices as jest.Mock).mockResolvedValue(devices);
+            (manageabilityService.runTool as jest.Mock).mockResolvedValue(makeUpdateEnvelope('apt', []));
+            (manageabilityService.collectInventory as jest.Mock).mockResolvedValue({});
+
+            const processed: string[] = [];
+            (updateReconciliationService.reconcile as jest.Mock).mockImplementation(async (device: Device) => {
+                if (device.id === 'broken') {
+                    throw new Error('Ansible policy file could not be parsed');
+                }
+                processed.push(device.id);
+                return {
+                    candidates: [], ansibleExclusions: [], kernelExclusions: [],
+                    firmwareCandidates: [], firmwareExclusions: [],
+                };
+            });
+
+            await (service as any).runAllDevices();
+
+            expect(processed.slice().sort()).toEqual(['ok-1', 'ok-2']);
         });
     });
 

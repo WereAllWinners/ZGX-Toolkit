@@ -2,7 +2,7 @@
     "name": "zgx-toolkit",
     "displayName": "ZGX Toolkit",
     "description": "Manage HP ZGX/DGX Spark devices with SSH, device inventory, health monitoring, diagnostics, and Ansible policy enforcement.",
-    "version": "2.3.4",
+    "version": "2.3.5",
     "publisher": "WereAllWinners",
     "icon": "resources/logo-marketplace.png",
     "galleryBanner": {
@@ -265,6 +265,13 @@
                     "minimum": 1,
                     "maximum": 168,
                     "description": "How often (in hours) scheduled checkups run."
+                },
+                "zgxToolkit.scheduledCheckups.maxConcurrentDevices": {
+                    "type": "number",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "Maximum number of devices to checkup simultaneously during a scheduled run. Bounds the number of concurrent SSH connections opened at once."
                 }
             }
         }

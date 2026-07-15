@@ -15,6 +15,8 @@ import { ManageabilityEnvelope, DeviceIdentity, DiagHealthResult, UpdatePosture 
 // Mock the SSH utility so no real network calls are made
 jest.mock('../../utils/sshConnection', () => ({
     executeSSHCommand: jest.fn(),
+    createSSHConnection: jest.fn(),
+    executeCommandOnClient: jest.fn(),
 }));
 
 // Mock deviceService used by collectInventory to persist the snapshot
@@ -36,10 +38,12 @@ jest.mock('../../utils/logger', () => ({
     },
 }));
 
-import { executeSSHCommand } from '../../utils/sshConnection';
+import { executeSSHCommand, createSSHConnection, executeCommandOnClient } from '../../utils/sshConnection';
 import { deviceService } from '../../services/deviceService';
 
 const mockExecuteSSHCommand = executeSSHCommand as jest.MockedFunction<typeof executeSSHCommand>;
+const mockCreateSSHConnection = createSSHConnection as jest.MockedFunction<typeof createSSHConnection>;
+const mockExecuteCommandOnClient = executeCommandOnClient as jest.MockedFunction<typeof executeCommandOnClient>;
 const mockMergeDeviceMetadata = deviceService.mergeDeviceMetadata as jest.MockedFunction<typeof deviceService.mergeDeviceMetadata>;
 
 // ---------------------------------------------------------------------------
@@ -207,10 +211,17 @@ describe('ManageabilityService', () => {
     // -----------------------------------------------------------------------
 
     describe('collectInventory', () => {
+        let mockClient: { end: jest.Mock };
+
+        beforeEach(() => {
+            mockClient = { end: jest.fn() };
+            mockCreateSSHConnection.mockResolvedValue(mockClient as any);
+        });
+
         it('assembles a snapshot from all 7 parallel tool results', async () => {
             // Return valid JSON for each tool call (7 calls)
             const stubEnvelope = (tool: string) => JSON.stringify(makeEnvelope(tool, { stub: true }));
-            mockExecuteSSHCommand
+            mockExecuteCommandOnClient
                 .mockResolvedValueOnce(makeSSHSuccess(stubEnvelope('device_identity')))
                 .mockResolvedValueOnce(makeSSHSuccess(stubEnvelope('os_build_identity')))
                 .mockResolvedValueOnce(makeSSHSuccess(stubEnvelope('hardware_config')))
@@ -240,7 +251,7 @@ describe('ManageabilityService', () => {
         it('tolerates partial failures — missing tools do not abort the others', async () => {
             // identity fails (SSH error), the rest succeed
             const stubEnvelope = (tool: string) => JSON.stringify(makeEnvelope(tool, {}));
-            mockExecuteSSHCommand
+            mockExecuteCommandOnClient
                 .mockResolvedValueOnce(makeSSHFailure())                              // device_identity fails
                 .mockResolvedValueOnce(makeSSHSuccess(stubEnvelope('os_build_identity')))
                 .mockResolvedValueOnce(makeSSHSuccess(stubEnvelope('hardware_config')))
@@ -257,13 +268,57 @@ describe('ManageabilityService', () => {
         });
 
         it('still returns a snapshot when all tools fail', async () => {
-            mockExecuteSSHCommand.mockResolvedValue(makeSSHFailure());
+            mockExecuteCommandOnClient.mockResolvedValue(makeSSHFailure());
 
             const snapshot = await service.collectInventory(device);
 
             expect(snapshot).toBeDefined();
             expect(snapshot.identity).toBeUndefined();
             expect(snapshot.collectedAt).toBeTruthy();
+        });
+
+        // F-6: connection reuse — one connection for the whole collection,
+        // not one per tool.
+
+        it('opens exactly one SSH connection and runs all 7 tools on it', async () => {
+            mockExecuteCommandOnClient.mockResolvedValue(makeSSHFailure());
+
+            await service.collectInventory(device);
+
+            expect(mockCreateSSHConnection).toHaveBeenCalledTimes(1);
+            expect(mockExecuteCommandOnClient).toHaveBeenCalledTimes(7);
+            expect(mockExecuteSSHCommand).not.toHaveBeenCalled();
+        });
+
+        it('closes the shared connection even when a tool call rejects', async () => {
+            mockExecuteCommandOnClient
+                .mockRejectedValueOnce(new Error('stream error'))
+                .mockResolvedValue(makeSSHSuccess(JSON.stringify(makeEnvelope('x', {}))));
+
+            const snapshot = await service.collectInventory(device);
+
+            expect(snapshot).toBeDefined();
+            expect(mockClient.end).toHaveBeenCalledTimes(1);
+        });
+
+        it('closes the shared connection exactly once on the happy path', async () => {
+            mockExecuteCommandOnClient.mockResolvedValue(makeSSHSuccess(JSON.stringify(makeEnvelope('x', {}))));
+
+            await service.collectInventory(device);
+
+            expect(mockClient.end).toHaveBeenCalledTimes(1);
+        });
+
+        it('returns an empty-but-defined snapshot (no throw) when the connection itself fails', async () => {
+            mockCreateSSHConnection.mockRejectedValue(new Error('ECONNREFUSED'));
+
+            const snapshot = await service.collectInventory(device);
+
+            expect(snapshot).toBeDefined();
+            expect(snapshot.collectedAt).toBeTruthy();
+            expect(snapshot.identity).toBeUndefined();
+            expect(mockExecuteCommandOnClient).not.toHaveBeenCalled();
+            expect(mockMergeDeviceMetadata).toHaveBeenCalledWith(device.id, { manageabilitySnapshot: snapshot });
         });
     });
 

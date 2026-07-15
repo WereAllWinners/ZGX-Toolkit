@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.3.5 (2026-07-14)
+
+### SSH Connection Reuse + Bounded Fleet Concurrency (Performance/Reliability Fix — F-6)
+
+Two independent sub-fixes, both targeting connection churn at scale.
+
+#### Changed
+
+- **One SSH connection per device for inventory collection, not seven**: `collectInventory()` ran 7 collector tools, each independently opening and tearing down its own SSH connection via `executeSSHCommand`. `runTool()` now accepts an optional pre-established SSH client; `collectInventory()` opens exactly one connection up front, runs all 7 tools on it via `executeCommandOnClient`, and closes it once in a `finally` regardless of outcome. The existing `Promise.allSettled` "one tool's failure doesn't abort the snapshot" behavior is preserved, as is the existing behavior when the device is entirely unreachable (an empty-but-defined snapshot, no throw). Other single-tool callers of `runTool()` are unaffected.
+- **Bounded concurrency for scheduled fleet checkups**: `runAllDevices()` was a plain sequential loop — one device fully finished before the next started, with no concurrency at all (not "capping an existing burst," despite how the originating review framed it — there was no burst to cap, just a slow serial loop). Replaced with a small hand-rolled concurrency-limited pool (`src/utils/concurrency.ts`, no new dependency) reading a new `zgxToolkit.scheduledCheckups.maxConcurrentDevices` setting (default 5, min 1, max 20). One device failing does not stop the pool from continuing to process the rest of the fleet.
+
+#### Files changed
+
+- `src/services/manageabilityService.ts` — `runTool()` accepts an optional SSH client; `collectInventory()` rewired to share one connection
+- `src/utils/concurrency.ts` — new `runWithConcurrencyLimit()` pool helper
+- `src/services/scheduledCheckupService.ts` — `runAllDevices()` uses the bounded pool instead of a sequential `for` loop
+- `package.json` — new `zgxToolkit.scheduledCheckups.maxConcurrentDevices` setting
+- `docs/manageability.md` — new setting documented; architecture note on connection reuse
+
+---
+
 ## v2.3.4 (2026-07-13)
 
 ### Ansible Pin Parser: js-yaml, Fail-Closed (Security/Correctness Fix — F-5)

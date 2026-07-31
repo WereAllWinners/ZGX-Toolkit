@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Changelog
 
 ## v2.3.5 (2026-07-14)
@@ -329,6 +330,15 @@ Maintained by Jerome Gabryszewski. Original ZGX Toolkit by HP Inc at
 https://github.com/HPInc/ZGX-Toolkit — licensed under the X11 License.
 
 ---
+=======
+# Version v1.21.5 → v1.21.8 (June 2026)
+
+## What's New
+
+### Bug Fixes
+- **SSH Connectivity** - Fixes SSH "Test Connection" failures during device setup by improving reliability of connections across different terminal configurations.
+- **Manual Setup** - Updates manual commands for SSH key generation from `rsa` to `ed25519` for improved security and better cross-platform support.
+>>>>>>> main
 
 # Version v1.21.3 → v1.21.5 (May 2026)
 
